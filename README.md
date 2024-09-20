@@ -2,7 +2,7 @@
 
 Welcome to the **Molecule Visualizer**! This interactive GUI application allows you to visualize and manipulate molecules from an XYZ file. With this tool, you can translate and rotate selected molecules, adjust bond criteria, and save the modified configurations.
 
-![Molecule Visualizer Banner](https://your-image-link.com/banner.png)
+![Molecule Visualizer Banner](./molvizman_banner.webp)
 
 ---
 
