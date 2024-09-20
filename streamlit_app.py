@@ -4,22 +4,23 @@ import numpy as np
 
 # Average bond lengths in Angstroms
 average_bond_lengths = {
-    frozenset(['C', 'C']): 1.53,
-    frozenset(['C', 'N']): 1.47,
-    frozenset(['C', 'O']): 1.42,
-    frozenset(['C', 'H']): 1.09,
-    frozenset(['N', 'H']): 1.00,
-    frozenset(['O', 'H']): 0.96,
-    frozenset(['C', 'C double']): 1.34,
-    frozenset(['C', 'N double']): 1.27,
-    frozenset(['C', 'O double']): 1.21,
-    frozenset(['C', 'C triple']): 1.20,
-    frozenset(['C', 'N triple']): 1.15,
+    frozenset(["C", "C"]): 1.53,
+    frozenset(["C", "N"]): 1.47,
+    frozenset(["C", "O"]): 1.42,
+    frozenset(["C", "H"]): 1.09,
+    frozenset(["N", "H"]): 1.00,
+    frozenset(["O", "H"]): 0.96,
+    frozenset(["C", "C double"]): 1.34,
+    frozenset(["C", "N double"]): 1.27,
+    frozenset(["C", "O double"]): 1.21,
+    frozenset(["C", "C triple"]): 1.20,
+    frozenset(["C", "N triple"]): 1.15,
     # Add other bond types as necessary
 }
 
 # Tolerance in Angstroms
 bond_tolerance = 0.3  # Adjust this value as needed
+
 
 def get_bond_distance_range(atom1, atom2):
     """
@@ -34,6 +35,7 @@ def get_bond_distance_range(atom1, atom2):
     else:
         return None
 
+
 def determine_bonds(symbols, coords):
     """
     Determine bonds between atoms based on their types and distances.
@@ -41,7 +43,7 @@ def determine_bonds(symbols, coords):
     bonds = []
     num_atoms = len(symbols)
     for i in range(num_atoms):
-        for j in range(i+1, num_atoms):
+        for j in range(i + 1, num_atoms):
             atom1 = symbols[i]
             atom2 = symbols[j]
             bond_range = get_bond_distance_range(atom1, atom2)
@@ -51,6 +53,7 @@ def determine_bonds(symbols, coords):
                 if min_distance <= distance <= max_distance:
                     bonds.append((i, j))
     return bonds
+
 
 def load_xyz_from_text(xyz_text):
     """
@@ -85,6 +88,7 @@ def load_xyz_from_text(xyz_text):
             continue
     return symbols, np.array(coords)
 
+
 def separate_molecules(symbols, coords, nAtoms_list):
     """
     Separate the atoms and coordinates into molecules based on the number of atoms in each molecule.
@@ -92,17 +96,19 @@ def separate_molecules(symbols, coords, nAtoms_list):
     molecules = []
     idx = 0
     for nAtoms in nAtoms_list:
-        mol_symbols = symbols[idx:idx + nAtoms]
-        mol_coords = coords[idx:idx + nAtoms]
+        mol_symbols = symbols[idx : idx + nAtoms]
+        mol_coords = coords[idx : idx + nAtoms]
         molecules.append((mol_symbols, mol_coords))
         idx += nAtoms
     return molecules
+
 
 def calculate_centroid(coords):
     """
     Calculate the centroid of a set of coordinates.
     """
     return np.mean(coords, axis=0)
+
 
 def apply_rotation(coords, angle_x, angle_y, angle_z):
     """
@@ -114,17 +120,29 @@ def apply_rotation(coords, angle_x, angle_y, angle_z):
     theta_z = np.radians(angle_z)
 
     # Rotation matrices
-    R_x = np.array([[1, 0, 0],
-                    [0, np.cos(theta_x), -np.sin(theta_x)],
-                    [0, np.sin(theta_x), np.cos(theta_x)]])
+    R_x = np.array(
+        [
+            [1, 0, 0],
+            [0, np.cos(theta_x), -np.sin(theta_x)],
+            [0, np.sin(theta_x), np.cos(theta_x)],
+        ]
+    )
 
-    R_y = np.array([[np.cos(theta_y), 0, np.sin(theta_y)],
-                    [0, 1, 0],
-                    [-np.sin(theta_y), 0, np.cos(theta_y)]])
+    R_y = np.array(
+        [
+            [np.cos(theta_y), 0, np.sin(theta_y)],
+            [0, 1, 0],
+            [-np.sin(theta_y), 0, np.cos(theta_y)],
+        ]
+    )
 
-    R_z = np.array([[np.cos(theta_z), -np.sin(theta_z), 0],
-                    [np.sin(theta_z), np.cos(theta_z), 0],
-                    [0, 0, 1]])
+    R_z = np.array(
+        [
+            [np.cos(theta_z), -np.sin(theta_z), 0],
+            [np.sin(theta_z), np.cos(theta_z), 0],
+            [0, 0, 1],
+        ]
+    )
 
     # Combined rotation matrix
     R = R_z @ R_y @ R_x
@@ -137,11 +155,14 @@ def apply_rotation(coords, angle_x, angle_y, angle_z):
 
     return coords_final
 
+
 def main():
     st.title("🧪 Molecule Visualizer")
 
     # Input selection: Upload file or paste content
-    input_option = st.radio("Select input method:", ("Upload XYZ File", "Paste XYZ Content"))
+    input_option = st.radio(
+        "Select input method:", ("Upload XYZ File", "Paste XYZ Content")
+    )
 
     if input_option == "Upload XYZ File":
         uploaded_file = st.file_uploader("Upload an XYZ file", type=["xyz"])
@@ -171,14 +192,20 @@ def main():
     # Get number of molecules and atoms
     st.sidebar.header("Molecule Configuration")
 
-    nMolecules = st.sidebar.number_input("Number of Molecules", min_value=1, step=1, value=1)
-    nAtoms_input = st.sidebar.text_input("Number of Atoms in Each Molecule (comma-separated)", value="")
+    nMolecules = st.sidebar.number_input(
+        "Number of Molecules", min_value=1, step=1, value=1
+    )
+    nAtoms_input = st.sidebar.text_input(
+        "Number of Atoms in Each Molecule (comma-separated)", value=""
+    )
 
     if nAtoms_input:
         try:
-            nAtoms_list = [int(x.strip()) for x in nAtoms_input.split(',')]
+            nAtoms_list = [int(x.strip()) for x in nAtoms_input.split(",")]
             if len(nAtoms_list) != nMolecules:
-                st.error("Number of atoms specified does not match the number of molecules.")
+                st.error(
+                    "Number of atoms specified does not match the number of molecules."
+                )
                 return
         except ValueError:
             st.error("Please enter valid integers for the number of atoms.")
@@ -186,7 +213,9 @@ def main():
 
         # Validate total number of atoms
         if sum(nAtoms_list) != len(symbols):
-            st.error("The sum of atoms does not equal the total number of atoms in the file.")
+            st.error(
+                "The sum of atoms does not equal the total number of atoms in the file."
+            )
             return
 
         # Separate molecules
@@ -194,19 +223,23 @@ def main():
         molecule_data = separate_molecules(symbols, coords, nAtoms_list)
         for mol_symbols, mol_coords in molecule_data:
             mol_bonds = determine_bonds(mol_symbols, mol_coords)
-            molecules.append({
-                'symbols': mol_symbols,
-                'coords': mol_coords,
-                'bonds': mol_bonds,
-                'trans_coords': mol_coords.copy()
-            })
+            molecules.append(
+                {
+                    "symbols": mol_symbols,
+                    "coords": mol_coords,
+                    "bonds": mol_bonds,
+                    "trans_coords": mol_coords.copy(),
+                }
+            )
 
         # Molecule Selection
         st.sidebar.header("Select Molecules to Modify")
         selection_options = [f"Molecule {i+1}" for i in range(nMolecules)]
         default_selection = [selection_options[0]]  # Select Molecule 1 by default
-        selected_molecules = st.sidebar.multiselect("Molecules", selection_options, default=default_selection)
-        selected_indices = [int(s.split()[-1])-1 for s in selected_molecules]
+        selected_molecules = st.sidebar.multiselect(
+            "Molecules", selection_options, default=default_selection
+        )
+        selected_indices = [int(s.split()[-1]) - 1 for s in selected_molecules]
 
         # Transformation Controls
         st.sidebar.header("Transformation Controls")
@@ -219,40 +252,51 @@ def main():
 
         # Apply transformations and plot
         fig = plt.figure(figsize=(8, 6))
-        ax = fig.add_subplot(111, projection='3d')
+        ax = fig.add_subplot(111, projection="3d")
 
         for idx, molecule in enumerate(molecules):
             # Determine if molecule is selected for modification
             if idx in selected_indices:
                 # Apply transformation
-                coords = molecule['coords']
+                coords = molecule["coords"]
                 # Apply translation
                 coords_translated = coords + np.array([trans_x, trans_y, trans_z])
                 # Apply rotation
-                coords_transformed = apply_rotation(coords_translated, rot_x, rot_y, rot_z)
-                molecule['trans_coords'] = coords_transformed
+                coords_transformed = apply_rotation(
+                    coords_translated, rot_x, rot_y, rot_z
+                )
+                molecule["trans_coords"] = coords_transformed
             else:
                 # Use original coordinates
-                molecule['trans_coords'] = molecule['coords']
+                molecule["trans_coords"] = molecule["coords"]
 
             # Plot the molecule
-            x, y, z = molecule['trans_coords'].T
+            x, y, z = molecule["trans_coords"].T
             color = plt.cm.tab10(idx % 10)
             ax.scatter(x, y, z, color=color, label=f"Molecule {idx+1}")
 
             # Plot bonds
-            for bond in molecule['bonds']:
+            for bond in molecule["bonds"]:
                 i, j = bond
-                x_vals = [molecule['trans_coords'][i, 0], molecule['trans_coords'][j, 0]]
-                y_vals = [molecule['trans_coords'][i, 1], molecule['trans_coords'][j, 1]]
-                z_vals = [molecule['trans_coords'][i, 2], molecule['trans_coords'][j, 2]]
+                x_vals = [
+                    molecule["trans_coords"][i, 0],
+                    molecule["trans_coords"][j, 0],
+                ]
+                y_vals = [
+                    molecule["trans_coords"][i, 1],
+                    molecule["trans_coords"][j, 1],
+                ]
+                z_vals = [
+                    molecule["trans_coords"][i, 2],
+                    molecule["trans_coords"][j, 2],
+                ]
                 ax.plot(x_vals, y_vals, z_vals, color=color)
 
         ax.legend()
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-        ax.set_title('Molecule Visualization')
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        ax.set_title("Molecule Visualization")
         st.pyplot(fig)
 
         # Save adjusted molecule
@@ -260,24 +304,27 @@ def main():
             symbols_combined = []
             coords_combined = []
             for molecule in molecules:
-                symbols_combined.extend(molecule['symbols'])
-                coords_combined.append(molecule['trans_coords'])
+                symbols_combined.extend(molecule["symbols"])
+                coords_combined.append(molecule["trans_coords"])
             coords_combined = np.vstack(coords_combined)
 
             # Create XYZ content
             xyz_content = f"{len(symbols_combined)}\n\n"
             for symbol, coord in zip(symbols_combined, coords_combined):
-                xyz_content += f"{symbol}\t{coord[0]:.6f}\t{coord[1]:.6f}\t{coord[2]:.6f}\n"
+                xyz_content += (
+                    f"{symbol}\t{coord[0]:.6f}\t{coord[1]:.6f}\t{coord[2]:.6f}\n"
+                )
 
             # Provide download link
             st.download_button(
                 label="Download Adjusted Molecule",
                 data=xyz_content,
-                file_name='adjusted_molecule.xyz',
-                mime='text/plain'
+                file_name="adjusted_molecule.xyz",
+                mime="text/plain",
             )
     else:
         st.info("Please enter the number of atoms for each molecule in the sidebar.")
+
 
 if __name__ == "__main__":
     main()
