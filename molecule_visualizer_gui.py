@@ -29,8 +29,16 @@ bond_tolerance = 0.3  # Adjust this value as needed
 
 def get_bond_distance_range(atom1, atom2):
     """
-    Retrieve the minimum and maximum bond distances for a given pair of atom types.
-    """
+        Retrieve the minimum and maximum bond distances for a given pair of atom types.
+        
+        Args:
+            atom1 (str): The symbol of the first atom.
+            atom2 (str): The symbol of the second atom.
+        
+        Returns:
+            tuple or None: If a bond distance range is found for the given atom types, returns a tuple containing the minimum and maximum bond distances. Otherwise, returns `None`.
+        """
+    
     key = frozenset([atom1, atom2])
     average_length = average_bond_lengths.get(key)
     if average_length is not None:
@@ -44,7 +52,15 @@ def get_bond_distance_range(atom1, atom2):
 def determine_bonds(symbols, coords):
     """
     Determine bonds between atoms based on their types and distances.
+    
+    Args:
+        symbols (list): A list of atom symbols.
+        coords (numpy.ndarray): A 2D array of atom coordinates.
+    
+    Returns:
+        list: A list of tuples, where each tuple represents a bond between two atoms.
     """
+
     bonds = []
     num_atoms = len(symbols)
     for i in range(num_atoms):
@@ -63,7 +79,17 @@ def determine_bonds(symbols, coords):
 def load_xyz(file_path):
     """
     Load atom symbols and coordinates from an XYZ file.
+    
+    Args:
+        file_path (str): The path to the XYZ file.
+    
+    Returns:
+        tuple: A tuple containing two lists - the first list contains the atom symbols, and the second list contains the atom coordinates as a NumPy array.
+    
+    Raises:
+        ValueError: If the first line of the file does not contain the number of atoms, or if the number of coordinate lines does not match the atom count.
     """
+
     with open(file_path, "r") as file:
         lines = file.readlines()
         try:
@@ -98,6 +124,14 @@ def load_xyz(file_path):
 def separate_molecules(symbols, coords, nAtoms_list):
     """
     Separate the atoms and coordinates into molecules based on the number of atoms in each molecule.
+    
+    Args:
+        symbols (list): A list of atom symbols.
+        coords (numpy.ndarray): A 2D array of atom coordinates.
+        nAtoms_list (list): A list of the number of atoms in each molecule.
+    
+    Returns:
+        list: A list of tuples, where each tuple contains the atom symbols and coordinates for a single molecule.
     """
     molecules = []
     idx = 0
@@ -112,6 +146,12 @@ def separate_molecules(symbols, coords, nAtoms_list):
 def calculate_centroid(coords):
     """
     Calculate the centroid of a set of coordinates.
+    
+    Args:
+        coords (numpy.ndarray): A 2D array of coordinates.
+    
+    Returns:
+        numpy.ndarray: The centroid of the input coordinates.
     """
     return np.mean(coords, axis=0)
 
@@ -201,7 +241,18 @@ class MoleculeVisualizer:
     def add_controls(self):
         """
         Add translation, rotation, and molecule selection controls to the GUI.
+        
+        This method creates a scrollable frame within the control_frame and adds the following controls:
+        
+        - "All Molecules" checkbox to select/deselect all molecules
+        - Individual molecule selection checkboxes
+        - Translation sliders for X, Y, and Z axes
+        - Rotation sliders for X, Y, and Z axes
+        - "Save Adjusted Molecule" and "Reset" buttons
+        
+        The controls are used to modify the transformation parameters of the selected molecules, which are then applied to update the molecule visualization.
         """
+
         control_frame = self.control_frame
 
         # Use a scrollbar if needed
@@ -355,6 +406,17 @@ class MoleculeVisualizer:
     def update_selection(self):
         """
         Update the list of selected molecules based on the user's selection.
+        
+        This method updates the `self.selected_molecules` list to contain the indices of the
+        molecules that are currently selected by the user. It also updates the "All Molecules"
+        checkbox based on the current selection. If all molecules are selected, the "All Molecules"
+        checkbox is set to 1. Otherwise, it is set to 0.
+        
+        If the "All Molecules" checkbox is toggled, this method sets all selection checkboxes
+        to 1 and updates `self.selected_molecules` to contain the indices of all molecules.
+        
+        Finally, this method calls `self.update_plot()` to update the visualization based on
+        the new selection.
         """
         # Update selected molecules list
         self.selected_molecules = [
@@ -378,6 +440,19 @@ class MoleculeVisualizer:
     def update_plot(self, event=None):
         """
         Update the molecule visualization based on current slider values.
+        
+        This method is responsible for updating the 3D visualization of the molecules based on the current transformation parameters (translation, rotation) specified by the user through the GUI sliders. It performs the following steps:
+        
+        1. Clear the existing plot.
+        2. Retrieve the current transformation parameters (translation vector, rotation angles) from the GUI sliders.
+        3. Iterate through each molecule in the `self.molecules` list:
+           - If the molecule is selected for modification, apply the current translation and rotation to the molecule's coordinates and store the transformed coordinates in `molecule["trans_coords"]`.
+           - If the molecule is not selected, use the original coordinates stored in `molecule["coords"]`.
+        4. Plot the transformed coordinates of each molecule as a scatter plot, with each molecule assigned a different color.
+        5. Plot the bonds between the atoms of each molecule as lines.
+        6. Add a legend, axis labels, and a title to the plot.
+        7. Set the camera view to an elevation of 20 degrees and an azimuth of 30 degrees.
+        8. Redraw the canvas to update the visualization.
         """
         self.ax.clear()
 
@@ -438,6 +513,15 @@ class MoleculeVisualizer:
     def apply_rotation(self, coords, angle_x, angle_y, angle_z):
         """
         Apply rotation to the coordinates based on the provided rotation angles.
+        
+        Args:
+            coords (numpy.ndarray): The coordinates to be rotated.
+            angle_x (float): The rotation angle around the X-axis in degrees.
+            angle_y (float): The rotation angle around the Y-axis in degrees.
+            angle_z (float): The rotation angle around the Z-axis in degrees.
+        
+        Returns:
+            numpy.ndarray: The rotated coordinates.
         """
         # Convert angles to radians
         theta_x = np.radians(angle_x)
@@ -483,6 +567,8 @@ class MoleculeVisualizer:
     def save_molecule(self):
         """
         Save the adjusted molecule coordinates to an XYZ file.
+        
+        This function takes the transformed coordinates of the molecules and writes them to a new XYZ file named "adjusted_molecule.xyz". The file contains the number of atoms on the first line, followed by the atom symbols and their corresponding coordinates.
         """
         symbols = []
         coords = []
@@ -503,7 +589,7 @@ class MoleculeVisualizer:
 
     def reset_view(self):
         """
-        Reset the translation and rotation sliders to their initial values.
+        Reset the translation and rotation sliders to their initial values, and update the plot.
         """
         # Reset translation sliders to zero
         self.trans_x.set(0)
