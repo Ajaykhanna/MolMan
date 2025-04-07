@@ -1,23 +1,22 @@
-# Refactored Streamlit App (Matplotlib version) with User-Resizable Plot
-
+# Refactored Streamlit App with Plotly for Interactive Visualization
 import streamlit as st
 
-# Keep Matplotlib imports
-import matplotlib.pyplot as plt
-
-# Need Axes3D for subplot creation if not done implicitly
-# from mpl_toolkits.mplot3d import Axes3D # Might not be strictly necessary depending on matplotlib version
+# Remove matplotlib import for plotting
+# import matplotlib.pyplot as plt
+import plotly.graph_objects as go  # Import Plotly
 import numpy as np
 from typing import List, Tuple, Dict, Optional, FrozenSet, Any
 from dataclasses import dataclass, field
 import io
 
-# --- Constants --- (Same as Matplotlib version)
+# --- Constants ---
+# == Representation Styles == (Keep these)
 STYLE_LINES = "Lines"
 STYLE_BALL_STICK = "Ball and Stick"
 STYLE_SPACE_FILLING = "Space Filling"
 REPRESENTATION_STYLES = [STYLE_LINES, STYLE_BALL_STICK, STYLE_SPACE_FILLING]
 DEFAULT_REPRESENTATION = STYLE_BALL_STICK
+# == Colors (CPK) == (Keep these)
 CPK_COLORS: Dict[str, str] = {
     "H": "white",
     "C": "#222222",
@@ -53,6 +52,7 @@ CPK_COLORS: Dict[str, str] = {
 DEFAULT_ATOM_COLOR = "pink"
 DEFAULT_BOND_COLOR = "#555555"
 ATOM_EDGE_COLOR = "black"
+# == Radii (in Angstroms) == (Keep these)
 COVALENT_RADII: Dict[str, float] = {
     "H": 0.37,
     "C": 0.77,
@@ -95,11 +95,15 @@ VDW_RADII: Dict[str, float] = {
 }
 DEFAULT_COVALENT_RADIUS = 0.6
 DEFAULT_VDW_RADIUS = 1.5
-# Matplotlib scale factors
-RADIUS_TO_SCATTER_SCALE_BALL_STICK = 350
-RADIUS_TO_SCATTER_SCALE_SPACE_FILLING = 500
-LINE_WIDTH_LINES = 1.0
-LINE_WIDTH_BALL_STICK = 4.0
+
+# == Plotly Scale Factors & Line Widths (ADJUSTED FOR PLOTLY) ==
+# Plotly marker size is roughly diameter in pixels. Requires tuning.
+RADIUS_TO_PLOTLY_SIZE_BALL_STICK = 18  # Adjust this factor
+RADIUS_TO_PLOTLY_SIZE_SPACE_FILLING = 25  # Adjust this factor
+LINE_WIDTH_LINES_PLOTLY = 2
+LINE_WIDTH_BALL_STICK_PLOTLY = 6
+
+# == Bond Calculation == (Keep these)
 AVERAGE_BOND_LENGTHS: Dict[FrozenSet[str], float] = {
     frozenset(["C", "C"]): 1.53,
     frozenset(["C", "N"]): 1.47,
@@ -107,14 +111,14 @@ AVERAGE_BOND_LENGTHS: Dict[FrozenSet[str], float] = {
     frozenset(["C", "H"]): 1.09,
     frozenset(["N", "H"]): 1.00,
     frozenset(["O", "H"]): 0.96,
+    frozenset(["S", "H"]): 1.02,
+    frozenset(["N", "N"]): 1.35,
+    frozenset(["C", "Br"]): 1.89,
 }
 BOND_TOLERANCE: float = 0.3
-# Default Plot Size (inches)
-DEFAULT_PLOT_WIDTH = 8
-DEFAULT_PLOT_HEIGHT = 7
 
 
-# --- Data Structures --- (Molecule class same as before)
+# --- Data Structures --- (Molecule class essentially the same)
 @dataclass
 class Molecule:
     symbols: List[str]
@@ -270,130 +274,133 @@ def apply_transformations(
             molecule.reset_transformation()
 
 
-# --- Plotting Function (Using Matplotlib) ---
-# This is the Matplotlib plot_molecules function from before the Plotly switch
-def plot_molecules_matplotlib(ax: plt.Axes, molecules: List[Molecule], style: str):
-    """Plots molecules onto the provided 3D Matplotlib axes based on the selected style."""
-    ax.clear()
+# --- Plotting Function (Using Plotly) ---
+# --- Plotting Function (Using Plotly) ---
+def plot_molecules_plotly(molecules: List[Molecule], style: str) -> go.Figure:
+    """Creates an interactive Plotly 3D figure of the molecules."""
+    fig = go.Figure()
     all_coords_list = []
-    mol_colors = plt.cm.tab20  # Use a colormap with more distinct colors
 
-    for idx, molecule in enumerate(molecules):  # idx is the global index
+    # --- Consolidated Bond Trace Data ---
+    bond_x, bond_y, bond_z = [], [], []
+
+    for idx, molecule in enumerate(molecules):
         coords = molecule.transformed_coords
         symbols = molecule.symbols
         if coords.size == 0:
             continue
+
         all_coords_list.append(coords)
         x, y, z = coords.T
         atom_colors = get_element_property(symbols, CPK_COLORS, DEFAULT_ATOM_COLOR)
-        # Color molecules by their global index for distinction
-        molecule_color = mol_colors(idx % mol_colors.N)  # Cycle through colors
+        hover_texts = [
+            f"{molecule.name}<br>Atom {i}: {s}<br>Pos: ({px:.3f}, {py:.3f}, {pz:.3f})"
+            for i, (s, px, py, pz) in enumerate(zip(symbols, x, y, z))
+        ]
 
+        marker_props = dict(
+            color=atom_colors,
+            symbol="circle",
+            line=dict(color=ATOM_EDGE_COLOR, width=0.5),
+        )
+        atom_visible = True
+        trace_name = molecule.name  # Use the unique molecule name
+
+        # Determine marker size based on style
         if style == STYLE_LINES:
-            ax.scatter(
-                x,
-                y,
-                z,
-                c=atom_colors,
-                s=10,
-                edgecolors=ATOM_EDGE_COLOR,
-                linewidths=0.5,
-                depthshade=True,
-            )
-            for i, j in molecule.bonds:
-                if 0 <= i < len(coords) and 0 <= j < len(coords):
-                    bond_coords = coords[[i, j]]
-                    ax.plot(
-                        bond_coords[:, 0],
-                        bond_coords[:, 1],
-                        bond_coords[:, 2],
-                        color=DEFAULT_BOND_COLOR,
-                        linewidth=LINE_WIDTH_LINES,
-                        label=molecule.name if i == 0 and j == 1 and idx < 15 else None,
-                    )  # Label first bond?
+            marker_props["size"] = 3
         elif style == STYLE_BALL_STICK:
             radii = get_element_property(
                 symbols, COVALENT_RADII, DEFAULT_COVALENT_RADIUS
             )
-            sizes = [(r**2) * RADIUS_TO_SCATTER_SCALE_BALL_STICK for r in radii]
-            ax.scatter(
-                x,
-                y,
-                z,
-                c=atom_colors,
-                s=sizes,
-                edgecolors=ATOM_EDGE_COLOR,
-                linewidths=0.5,
-                depthshade=True,
-                label=molecule.name if idx < 15 else None,
-            )
-            for i, j in molecule.bonds:
-                if 0 <= i < len(coords) and 0 <= j < len(coords):
-                    bond_coords = coords[[i, j]]
-                    ax.plot(
-                        bond_coords[:, 0],
-                        bond_coords[:, 1],
-                        bond_coords[:, 2],
-                        color=DEFAULT_BOND_COLOR,
-                        linewidth=LINE_WIDTH_BALL_STICK,
-                        solid_capstyle="round",
-                    )
+            marker_props["size"] = [r * RADIUS_TO_PLOTLY_SIZE_BALL_STICK for r in radii]
         elif style == STYLE_SPACE_FILLING:
             radii = get_element_property(symbols, VDW_RADII, DEFAULT_VDW_RADIUS)
-            sizes = [(r**2) * RADIUS_TO_SCATTER_SCALE_SPACE_FILLING for r in radii]
-            ax.scatter(
-                x,
-                y,
-                z,
-                c=atom_colors,
-                s=sizes,
-                edgecolors=None,
-                linewidths=0,
-                depthshade=True,
-                label=molecule.name if idx < 15 else None,
-            )
+            marker_props["size"] = [
+                r * RADIUS_TO_PLOTLY_SIZE_SPACE_FILLING for r in radii
+            ]
+            marker_props["line"]["width"] = 0  # No edges for space filling
         else:
-            ax.scatter(x, y, z, label=f"{molecule.name} (Unknown Style)")
+            marker_props["size"] = 5
+            atom_visible = False
 
-    if not all_coords_list:
-        ax.set_title("No molecules to plot")
-        return
-    all_coords_array = np.vstack(all_coords_list)
-    if all_coords_array.size == 0:
-        ax.set_title("No coordinates to plot")
-        return
+        # Add atom trace if visible for the style
+        if atom_visible:
+            fig.add_trace(
+                go.Scatter3d(
+                    x=x,
+                    y=y,
+                    z=z,
+                    mode="markers",
+                    marker=marker_props,
+                    name=trace_name,  # Name shown in legend
+                    legendgroup=trace_name,  # **** Explicitly group by molecule name ****
+                    hoverinfo="text",
+                    text=hover_texts,
+                )
+            )
 
-    min_coords = np.min(all_coords_array, axis=0)
-    max_coords = np.max(all_coords_array, axis=0)
-    center = (max_coords + min_coords) / 2.0
-    ranges = max_coords - min_coords
-    buffer = max(1.0, np.max(ranges) * 0.1)
-    max_range_dim = np.max(ranges) / 2.0 + buffer
-    if max_range_dim <= buffer:
-        max_range_dim = buffer * 2
-    ax.set_xlim(center[0] - max_range_dim, center[0] + max_range_dim)
-    ax.set_ylim(center[1] - max_range_dim, center[1] + max_range_dim)
-    ax.set_zlim(center[2] - max_range_dim, center[2] + max_range_dim)
-    ax.set_xlabel("X (Å)")
-    ax.set_ylabel("Y (Å)")
-    ax.set_zlabel("Z (Å)")
-    ax.set_title(f"Molecule Visualization ({style})")
-    ax.view_init(elev=20, azim=30)
-    # Add legend only if few enough molecules to be readable
-    num_mols = len(molecules)
-    if num_mols > 1 and num_mols <= 15:
-        ax.legend(
-            title="Molecules",
-            fontsize="small",
-            loc="center left",
-            bbox_to_anchor=(1.0, 0.5),
+        # Prepare Bond Coordinates (Only for styles that show bonds)
+        show_bonds = style == STYLE_LINES or style == STYLE_BALL_STICK
+        if show_bonds:
+            for i, j in molecule.bonds:
+                if 0 <= i < len(coords) and 0 <= j < len(coords):
+                    bond_x.extend([coords[i, 0], coords[j, 0], None])
+                    bond_y.extend([coords[i, 1], coords[j, 1], None])
+                    bond_z.extend([coords[i, 2], coords[j, 2], None])
+
+    # --- Add Single Trace for All Bonds (if any exist) ---
+    if bond_x:  # Only add if bonds were prepared
+        bond_line_width = (
+            LINE_WIDTH_LINES_PLOTLY
+            if style == STYLE_LINES
+            else LINE_WIDTH_BALL_STICK_PLOTLY
         )
+        fig.add_trace(
+            go.Scatter3d(
+                x=bond_x,
+                y=bond_y,
+                z=bond_z,
+                mode="lines",
+                line=dict(color=DEFAULT_BOND_COLOR, width=bond_line_width),
+                hoverinfo="none",
+                showlegend=False,  # **** Make sure bonds trace is NOT in legend ****
+                name="Bonds",  # Internal name
+            )
+        )
+
+    # --- Layout and Axis Configuration --- (Same as before)
+    axis_settings = dict(
+        showbackground=False,
+        showticklabels=True,
+        showgrid=True,
+        zeroline=False,
+        titlefont=dict(color="black"),
+        gridcolor="lightgrey",
+        tickfont=dict(color="black"),
+    )
+    scene_dict = dict(
+        xaxis=dict(**axis_settings, title="X (Å)"),
+        yaxis=dict(**axis_settings, title="Y (Å)"),
+        zaxis=dict(**axis_settings, title="Z (Å)"),
+        aspectmode="data",
+    )
+    # ... (Optional manual range setting logic) ...
+    fig.update_layout(
+        title=f"Molecule Visualization ({style})",
+        scene=scene_dict,
+        showlegend=True,
+        legend=dict(title="Molecules", itemsizing="constant", x=0.01, y=0.99),
+        margin=dict(l=0, r=0, b=0, t=40),
+    )
+
+    return fig
 
 
 # --- Main Streamlit App ---
 def main():
     st.set_page_config(layout="wide", page_title="Molecule Visualizer")
-    st.title("🧪 Molecule Visualizer (Streamlit + Matplotlib)")
+    st.title("🧪 Interactive Molecule Visualizer (Streamlit + Plotly)")
 
     # Initialize Session State
     st.session_state.setdefault("molecule_data", None)
@@ -403,11 +410,8 @@ def main():
     st.session_state.setdefault("download_content", None)
     st.session_state.setdefault("show_download", False)
     st.session_state.setdefault("current_style", DEFAULT_REPRESENTATION)
-    # Add state for plot size
-    st.session_state.setdefault("plot_width", DEFAULT_PLOT_WIDTH)
-    st.session_state.setdefault("plot_height", DEFAULT_PLOT_HEIGHT)
 
-    # --- Input Handling --- (Same as previous Matplotlib version)
+    # Input Handling
     st.sidebar.header("1. Load Molecule Data")
     input_option = st.sidebar.radio(
         "Input method:", ("Upload XYZ File(s)", "Paste XYZ Content"), key="input_option"
@@ -471,12 +475,16 @@ def main():
                 st.session_state.molecule_data = None
                 input_changed = True
 
-    # --- Data Processing Step --- (Same as previous Matplotlib version)
+    # Data Processing
     if input_changed and files_to_process:
-        st.session_state.molecule_data = None
+        # ... inside the `if input_changed and files_to_process:` block ...
+        st.session_state.molecule_data = None  # Clear previous data
         all_molecules = []
         global_mol_index = 0
         valid_data_found = False
+        # REMOVED: processing_spinner = st.empty()
+
+        # CORRECTED: Use st.spinner directly as a context manager
         with st.spinner(f"Processing {len(files_to_process)} source(s)..."):
             for file_idx, (file_name, file_content) in enumerate(files_to_process):
                 symbols, coords = load_xyz_from_text(
@@ -484,10 +492,12 @@ def main():
                 )
                 if symbols is not None and coords is not None and len(symbols) > 0:
                     bonds = determine_bonds(symbols, coords)
+                    # Create simpler name: Use file name directly if multiple, or generic if single/pasted
                     base_name = file_name if len(files_to_process) > 1 else "Molecule"
                     if base_name == "Pasted Text" and len(files_to_process) == 1:
                         base_name = "Molecule"
-                    mol_name = f"{base_name}"
+                    mol_name = f"{base_name}"  # Simplifed name for legend/selection
+
                     molecule = Molecule(
                         symbols=symbols,
                         coords=coords,
@@ -501,35 +511,44 @@ def main():
                     global_mol_index += 1
                     valid_data_found = True
                 else:
+                    # Error message handled by load_xyz_from_text or warning added
                     st.warning(
                         f"Skipping '{file_name}' due to loading errors or no atoms found."
                     )
+        # REMOVED: processing_spinner.empty() # Not needed with 'with' statement
+
+        # --- After processing ---
         if valid_data_found:
             st.session_state.molecule_data = all_molecules
-            st.session_state.input_processed = True
-            st.session_state.selected_mol_names = [m.name for m in all_molecules][:1]
-            st.sidebar.success(f"{len(all_molecules)} molecule(s) loaded.")
+            st.session_state.input_processed = True  # Mark as processed
+            st.session_state.selected_mol_names = [m.name for m in all_molecules][
+                :1
+            ]  # Select first loaded mol
+            st.sidebar.success(
+                f"{len(all_molecules)} molecule(s) loaded from {len(files_to_process)} source(s)."
+            )
+            # Rerun needed to update UI, especially the multiselect default
+            # st.experimental_rerun()
             st.rerun()
         else:
-            st.error("Failed to load valid molecules.")
-            st.session_state.molecule_data = None
-            st.session_state.input_processed = False
+            st.error("Failed to load any valid molecules from the provided input(s).")
+            st.session_state.molecule_data = None  # Ensure data is cleared
+            st.session_state.input_processed = False  # Ensure it stays unprocessed
 
-    # --- Display Area ---
+    # Display Area
     if not st.session_state.get("molecule_data"):
         st.info("⬅️ Please upload XYZ file(s) or paste content in the sidebar.")
-        st.subheader("XYZ Format:")
-        st.code(
-            """[Number of Atoms]\n[Comment Line]\n[Element] [X] [Y] [Z]\n...""",
-            language="text",
-        )
+        # ... (Example XYZ text) ...
         return
 
+    # Data is ready
     molecules = st.session_state.molecule_data
     molecule_names = [m.name for m in molecules]
-    mol_name_to_index_map = {m.name: m.id for m in molecules}
+    mol_name_to_index_map = {
+        m.name: m.id for m in molecules
+    }  # Use ID which is the global index
 
-    # --- Sidebar Controls (Visualization & Transformation) ---
+    # Sidebar Controls
     st.sidebar.header("2. Visualization")
     current_style = st.sidebar.selectbox(
         "Representation Style",
@@ -538,27 +557,6 @@ def main():
         key="style_select",
     )
     st.session_state.current_style = current_style
-
-    # *** ADD PLOT SIZE CONTROLS ***
-    st.sidebar.subheader("Plot Size")
-    plot_width = st.sidebar.slider(
-        "Plot Width (inches)",
-        min_value=4,
-        max_value=16,
-        value=st.session_state.plot_width,
-        key="plot_w",
-    )
-    plot_height = st.sidebar.slider(
-        "Plot Height (inches)",
-        min_value=3,
-        max_value=14,
-        value=st.session_state.plot_height,
-        key="plot_h",
-    )
-    # Store updated size in session state
-    st.session_state.plot_width = plot_width
-    st.session_state.plot_height = plot_height
-    # *** END PLOT SIZE CONTROLS ***
 
     st.sidebar.header("3. Transformations")
     valid_default_selection = [
@@ -591,24 +589,19 @@ def main():
     rot_matrix = build_rotation_matrix(rot_x, rot_y, rot_z)
     apply_transformations(molecules, selected_indices, trans_vector, rot_matrix)
 
-    # --- Plotting ---
-    st.header("Molecule View")
-    # *** USE SLIDER VALUES FOR FIGSIZE ***
-    fig = plt.figure(figsize=(plot_width, plot_height))
-    ax = fig.add_subplot(111, projection="3d")
+    # Plotting using Plotly
+    st.header("Molecule View (Interactive)")
+    # Add a note about interaction
+    st.caption("Click and drag to rotate, scroll to zoom, right-click drag to pan.")
     try:
-        # Use the Matplotlib plotting function
-        plot_molecules_matplotlib(ax, molecules, current_style)
-        # Adjust layout to prevent cutoff, especially legend
-        fig.tight_layout(
-            rect=[0, 0, 0.9, 1]
-        )  # Adjust right margin for legend if needed
+        plotly_fig = plot_molecules_plotly(molecules, current_style)
+        # Use container width makes the plot responsive
+        st.plotly_chart(plotly_fig, use_container_width=True)
     except Exception as e:
         st.error(f"An error occurred during plotting: {e}")
-    # Display using st.pyplot
-    st.pyplot(fig)
+        # import traceback; st.code(traceback.format_exc()) # For debugging
 
-    # --- Save Functionality --- (Same as before)
+    # Save Functionality
     st.sidebar.header("4. Export")
     if st.sidebar.button("Prepare Combined Adjusted XYZ"):
         st.session_state.download_content = None
@@ -627,7 +620,8 @@ def main():
                 xyz_content += f"{symbol:<4} {coord[0]:>12.6f} {coord[1]:>12.6f} {coord[2]:>12.6f}\n"
             st.session_state.download_content = xyz_content
             st.session_state.show_download = True
-            st.rerun()  # Use stable rerun
+            # st.experimental_rerun()
+            st.rerun()
     if st.session_state.get("show_download", False) and st.session_state.get(
         "download_content"
     ):
