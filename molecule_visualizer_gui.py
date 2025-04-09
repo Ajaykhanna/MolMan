@@ -1,20 +1,47 @@
-# Refactored Tkinter App with Multi-File, Representations, Enhanced Plotting
+# Developed by: Ajay Khanna, ChatGPT-4o, and Google Gemini 2.5 Pro Experimental
+# Date: April.09.2025
+"""
+Molecule Visualizer GUI Application
+
+A comprehensive Tkinter-based application for visualizing molecular structures from XYZ files.
+Supports multi-file loading, interactive transformations, and multiple representation styles.
+
+Key Features:
+- Load multiple molecular structures simultaneously
+- Interactive translation and rotation controls
+- Representation styles: Lines, Ball and Stick, Space Filling
+- Centroid manipulation and global offset tracking
+- Save combined molecular structures
+
+Dependencies:
+- tkinter
+- matplotlib
+- numpy
+
+Usage:
+    python molecule_visualizer_gui.py molecule1.xyz molecule2.xyz ...
+"""
 
 import tkinter as tk
-from tkinter import ttk  # For Combobox
-from tkinter import filedialog  # Keep for potential future use or saving
+from tkinter import ttk, messagebox, filedialog
 import matplotlib.pyplot as plt
-
-# Need Axes3D for subplot creation if not done implicitly
-# from mpl_toolkits.mplot3d import Axes3D # Might not be strictly necessary
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 import argparse
-import os  # Keep for basic path checks maybe? Though pathlib preferred if used
-from pathlib import Path  # Use pathlib
+import os  # For DISPLAY check
+from pathlib import Path
 import sys
 from typing import List, Tuple, Dict, Optional, FrozenSet, Any
 from dataclasses import dataclass, field
+
+# Import Rotation from scipy if available for potential future rotation sync
+# try:
+#     from scipy.spatial.transform import Rotation as R
+#     SCIPY_AVAILABLE = True
+# except ImportError:
+#     SCIPY_AVAILABLE = False
+#     print("Warning: Scipy not found. Rotation slider sync disabled.", file=sys.stderr)
+SCIPY_AVAILABLE = False  # Keep rotation sync disabled for now for simplicity
 
 # --- Constants ---
 # == Representation Styles ==
@@ -104,7 +131,7 @@ DEFAULT_COVALENT_RADIUS = 0.6
 DEFAULT_VDW_RADIUS = 1.5
 # == Matplotlib Plotting Scale Factors & Line Widths ==
 RADIUS_TO_SCATTER_SCALE_BALL_STICK = 350
-RADIUS_TO_SCATTER_SCALE_SPACE_FILLING = 500  # Needs tuning
+RADIUS_TO_SCATTER_SCALE_SPACE_FILLING = 500
 LINE_WIDTH_LINES = 1.0
 LINE_WIDTH_BALL_STICK = 4.0
 # == Bond Calculation ==
@@ -118,60 +145,107 @@ AVERAGE_BOND_LENGTHS: Dict[FrozenSet[str], float] = {
 }
 BOND_TOLERANCE: float = 0.3
 # == GUI Constants ==
-SLIDER_TRANSLATION_RANGE: Tuple[float, float] = (-10.0, 10.0)  # Adjusted range
+SLIDER_TRANSLATION_RANGE: Tuple[float, float] = (-10.0, 10.0)
 SLIDER_ROTATION_RANGE: Tuple[float, float] = (-180.0, 180.0)
 SLIDER_RESOLUTION_TRANS: float = 0.1
 SLIDER_RESOLUTION_ROT: float = 1.0
-DEFAULT_OUTPUT_FILENAME: str = "combined_adjusted_molecule.xyz"  # Updated default name
-DEFAULT_WINDOW_SIZE: str = "1100x700"
+DEFAULT_OUTPUT_FILENAME: str = "manipulated_structures.xyz"
+DEFAULT_WINDOW_SIZE: str = "1200x750"
 PLOT_ELEVATION: float = 20.0
 PLOT_AZIMUTH: float = 30.0
+# == Styling Constants ==
+BG_COLOR_FRAME = "#F0F0F0"
+BG_COLOR_LBLFRAME = "#ECECEC"
+BG_COLOR_BTN = "#D5D5D5"
+BG_COLOR_BTN_ACTIVE = "#C0C0C0"
+FG_COLOR_LABEL = "#333333"
+FONT_DEFAULT = ("Arial", 9)
+FONT_BOLD = ("Arial", 10, "bold")
+FORMAT_TRANS = "{:.1f}"
+FORMAT_ROT = "{:.0f}"
 
 
 # --- Data Structures ---
 @dataclass
 class Molecule:
-    """Represents a single molecule with atoms, coordinates, bonds, and origin info."""
+    """
+    Represents a single molecule unit, storing original and transformed state.
+
+    Attributes:
+        symbols (List[str]): List of atomic symbols.
+        coords (np.ndarray): Original coordinates of the molecule.
+        bonds (List[Tuple[int, int]]): List of bonds between atoms.
+        id (int): Unique identifier for the molecule.
+        name (str): Name of the molecule.
+        source_file_index (int): Index of the source file.
+        source_file_name (str): Name of the source file.
+        transformed_coords (np.ndarray): Transformed coordinates of the molecule.
+        final_translation (np.ndarray): Final translation vector.
+        final_rotation_matrix (np.ndarray): Final rotation matrix.
+    """
 
     symbols: List[str]
     coords: np.ndarray
     bonds: List[Tuple[int, int]]
-    id: int  # Global index in the combined list
-    name: str  # Unique identifier like "File1-Mol1" or filename
+    id: int
+    name: str
     source_file_index: int
     source_file_name: str
     transformed_coords: np.ndarray = field(init=False)
+    final_translation: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    final_rotation_matrix: np.ndarray = field(default_factory=lambda: np.identity(3))
 
     def __post_init__(self):
-        self.reset_transformation()
+        """
+        Initializes transformed state after the main __init__.
+        """
+        self.apply_final_transformation()
 
     def reset_transformation(self):
-        self.transformed_coords = self.coords.copy()
+        """
+        Resets transformed_coords, final_translation, and final_rotation_matrix.
+        """
+        self.final_translation = np.zeros(3)
+        self.final_rotation_matrix = np.identity(3)
+        self.apply_final_transformation()
 
     @property
     def centroid(self) -> np.ndarray:
+        """
+        Calculates the geometric centroid based on the original coordinates.
+
+        Returns:
+            np.ndarray: The centroid of the molecule.
+        """
         return np.mean(self.coords, axis=0) if self.coords.size > 0 else np.zeros(3)
 
-    def apply_transformation(self, translation: np.ndarray, rot_matrix: np.ndarray):
+    def apply_final_transformation(self):
+        """
+        Applies the stored final_rotation_matrix and final_translation
+        to the original coordinates to update transformed_coords.
+        """
         if self.coords.size == 0:
+            self.transformed_coords = np.array([])
             return
         original_centroid = self.centroid
         coords_centered = self.coords - original_centroid
-        coords_rotated = coords_centered @ rot_matrix.T
+        coords_rotated = coords_centered @ self.final_rotation_matrix.T
         coords_recentered = coords_rotated + original_centroid
-        self.transformed_coords = coords_recentered + translation
+        self.transformed_coords = coords_recentered + self.final_translation
 
 
 # --- Helper Functions ---
 def get_element_property(
     symbols: List[str], property_dict: Dict[str, Any], default_value: Any
 ) -> List[Any]:
+    """Looks up a property (e.g., color, radius) for a list of element symbols."""
     return [property_dict.get(s.capitalize(), default_value) for s in symbols]
 
 
 def build_rotation_matrix(
     angle_x_deg: float, angle_y_deg: float, angle_z_deg: float
 ) -> np.ndarray:
+    """Builds a combined 3D rotation matrix using ZYX Tait-Bryan convention."""
     theta_x, theta_y, theta_z = (
         np.radians(angle_x_deg),
         np.radians(angle_y_deg),
@@ -188,6 +262,7 @@ def build_rotation_matrix(
 
 # --- Core Logic Functions ---
 def get_bond_distance_range(atom1: str, atom2: str) -> Optional[Tuple[float, float]]:
+    """Retrieves the minimum and maximum distance criteria for a potential bond."""
     key = frozenset([atom1.capitalize(), atom2.capitalize()])
     average_length = AVERAGE_BOND_LENGTHS.get(key)
     if average_length is not None:
@@ -199,6 +274,7 @@ def get_bond_distance_range(atom1: str, atom2: str) -> Optional[Tuple[float, flo
 
 
 def determine_bonds(symbols: List[str], coords: np.ndarray) -> List[Tuple[int, int]]:
+    """Determines bonds between atoms based on element types and distances."""
     bonds: List[Tuple[int, int]] = []
     num_atoms = len(symbols)
     if num_atoms < 2:
@@ -219,8 +295,7 @@ def determine_bonds(symbols: List[str], coords: np.ndarray) -> List[Tuple[int, i
 
 
 def load_xyz(file_path: Path) -> Tuple[Optional[List[str]], Optional[np.ndarray]]:
-    """Load atom symbols and coordinates from an XYZ file."""
-    # Keep error handling similar to previous Tkinter version, maybe print warnings/errors
+    """Loads atom symbols and coordinates from a standard XYZ file."""
     if not file_path.is_file():
         print(f"Error: File not found: {file_path}", file=sys.stderr)
         return None, None
@@ -229,10 +304,7 @@ def load_xyz(file_path: Path) -> Tuple[Optional[List[str]], Optional[np.ndarray]
             lines = file.readlines()
             if not lines:
                 raise ValueError(f"File is empty: {file_path}")
-            atom_count_str = lines[0].strip()
-            if not atom_count_str:
-                raise ValueError("First line (atom count) is empty.")
-            atom_count = int(atom_count_str)
+            atom_count = int(lines[0].strip())
             if len(lines) < 2:
                 raise ValueError("File must have at least 2 lines.")
             coord_lines = lines[2:]
@@ -279,58 +351,72 @@ def load_xyz(file_path: Path) -> Tuple[Optional[List[str]], Optional[np.ndarray]
 
 # --- Main Application Class ---
 class MoleculeVisualizer:
-    """GUI application for visualizing and manipulating molecules from XYZ files."""
+    """Main application class for the Tkinter Molecule Visualizer."""
 
     def __init__(self, master: tk.Tk, xyz_files: List[Path]):
-        """Initialize the MoleculeVisualizer."""
+        """Initializes the MoleculeVisualizer application."""
         self.master = master
         self.xyz_files = xyz_files
-        self.molecules: List[Molecule] = []  # Will hold Molecule objects
-        self.selected_molecule_indices: List[int] = []  # Global indices
-        self.mol_name_to_id_map: Dict[str, int] = {}  # Map display name to global index
+        self.molecules: List[Molecule] = []
+        self.selected_molecule_indices: List[int] = []
+        self.mol_name_to_id_map: Dict[str, int] = {}
+        self.global_offset = np.zeros(3)
+        self._block_slider_command = (
+            False  # Flag to prevent slider command during programmatic set
+        )
 
         self._configure_window()
-        self._load_and_process_data()  # Load data from multiple files
+        self._load_and_process_data()
 
         # GUI Elements & State
-        self.fig: Optional[plt.Figure] = None
-        self.ax: Optional[plt.Axes] = None
-        self.canvas: Optional[FigureCanvasTkAgg] = None
-        self.control_frame: Optional[tk.Frame] = None
-        self.selection_vars: Dict[str, tk.IntVar] = {}  # Map name to IntVa
-        self.select_all_var: Optional[tk.IntVar] = None
+        self.fig = None
+        self.ax = None
+        self.canvas = None
+        self.control_frame = None
+        self.scrollable_frame = None
+        self.selection_vars = {}
+        self.select_all_var = tk.IntVar(value=0)  # Initialize here
         self.representation_style = tk.StringVar(value=DEFAULT_REPRESENTATION)
-        self.trans_x: Optional[tk.DoubleVar] = None
-        self.trans_y: Optional[tk.DoubleVar] = None
-        self.trans_z: Optional[tk.DoubleVar] = None
-        self.rot_x: Optional[tk.DoubleVar] = None
-        self.rot_y: Optional[tk.DoubleVar] = None
-        self.rot_z: Optional[tk.DoubleVar] = None
+        self.trans_x = tk.DoubleVar(value=0.0)
+        self.trans_y = tk.DoubleVar(value=0.0)
+        self.trans_z = tk.DoubleVar(value=0.0)
+        self.rot_x = tk.DoubleVar(value=0.0)
+        self.rot_y = tk.DoubleVar(value=0.0)
+        self.rot_z = tk.DoubleVar(value=0.0)
+        self.trans_x_str = tk.StringVar()
+        self.trans_y_str = tk.StringVar()
+        self.trans_z_str = tk.StringVar()
+        self.rot_x_str = tk.StringVar()
+        self.rot_y_str = tk.StringVar()
+        self.rot_z_str = tk.StringVar()
+        self.target_x_var = tk.DoubleVar(value=0.0)
+        self.target_y_var = tk.DoubleVar(value=0.0)
+        self.target_z_var = tk.DoubleVar(value=0.0)
+        self.target_x_entry = None
+        self.target_y_entry = None
+        self.target_z_entry = None
 
         if not self.molecules:
-            # Handle case where no molecules were loaded successfully
-            print(
-                "Error: No valid molecules loaded from input files. Exiting.",
-                file=sys.stderr,
-            )
-            # Optionally show a Tkinter error message box
             messagebox.showerror(
                 "Loading Error", "No valid molecules loaded from input files."
             )
             self.master.quit()
-            # sys.exit(1) # Exit here might be too abrupt if Tk window is already up
-            return  # Stop initialization
+            return
 
-        # Default selection: Select the first loaded molecule if available
         if self.molecules:
-            first_mol_name = self.molecules[0].name
-            self.selected_molecule_indices = [self.mol_name_to_id_map[first_mol_name]]
+            self.selected_molecule_indices = [self.molecules[0].id]
 
+        self._setup_var_traces()
         self._setup_gui()
-        self._update_view()  # Initial plot
+        # Apply initial transform state (usually identity/zero)
+        for mol in self.molecules:
+            mol.apply_final_transformation()
+        # Sync sliders to initial selection (will reset them to 0 if needed)
+        self._sync_sliders_to_selection()
+        self._draw_plot()  # Initial plot
 
-    def _configure_window(self):
-        """Set up main window properties."""
+    def _configure_window(self):  # (Same as before)
+        """Sets up main window properties like title, size, and resizing."""
         num_files = len(self.xyz_files)
         file_text = (
             f"{num_files} file{'s' if num_files != 1 else ''}"
@@ -341,285 +427,681 @@ class MoleculeVisualizer:
         self.master.geometry(DEFAULT_WINDOW_SIZE)
         self.master.rowconfigure(0, weight=1)
         self.master.columnconfigure(0, weight=1)
+        self.master.config(bg=BG_COLOR_FRAME)
 
-    def _load_and_process_data(self):
-        """Load data from multiple XYZ files and process into Molecule objects."""
+    def _load_and_process_data(self):  # (Same as before)
+        """Loads data from multiple XYZ files specified at startup."""
         print(f"Processing {len(self.xyz_files)} input file(s)...")
         global_mol_index = 0
         all_molecules = []
         mol_name_to_id = {}
-
         for file_idx, file_path in enumerate(self.xyz_files):
             print(f"  Loading: {file_path.name}")
             symbols, coords = load_xyz(file_path)
-
             if symbols is not None and coords is not None and len(symbols) > 0:
                 print(f"    Found {len(symbols)} atoms. Calculating bonds...")
                 bonds = determine_bonds(symbols, coords)
                 print(f"    Found {len(bonds)} bonds.")
-
-                # Determine molecule name
-                base_name = file_path.stem  # Use filename without extension
+                base_name = file_path.stem
                 mol_name = base_name if len(self.xyz_files) > 1 else "Molecule 1"
-
+                unique_mol_name = mol_name
+                count = 1
+                while unique_mol_name in mol_name_to_id:
+                    count += 1
+                    unique_mol_name = f"{mol_name}_{count}"
                 molecule = Molecule(
                     symbols=symbols,
                     coords=coords,
                     bonds=bonds,
                     id=global_mol_index,
-                    name=mol_name,
+                    name=unique_mol_name,
                     source_file_index=file_idx,
                     source_file_name=file_path.name,
                 )
                 all_molecules.append(molecule)
-                mol_name_to_id[mol_name] = global_mol_index
+                mol_name_to_id[unique_mol_name] = global_mol_index
                 global_mol_index += 1
             else:
                 print(
                     f"    Skipping {file_path.name} due to loading errors or no atoms."
                 )
-
         self.molecules = all_molecules
         self.mol_name_to_id_map = mol_name_to_id
         print(f"Successfully loaded {len(self.molecules)} molecule(s) in total.")
 
-    def _setup_gui(self):
-        """Create and arrange all GUI elements."""
-        main_frame = tk.Frame(self.master)
+    def _setup_var_traces(self):  # (Same as before)
+        """Sets up traces to update slider value labels automatically."""
+        self._update_slider_label(self.trans_x, self.trans_x_str, FORMAT_TRANS)
+        self._update_slider_label(self.trans_y, self.trans_y_str, FORMAT_TRANS)
+        self._update_slider_label(self.trans_z, self.trans_z_str, FORMAT_TRANS)
+        self._update_slider_label(self.rot_x, self.rot_x_str, FORMAT_ROT)
+        self._update_slider_label(self.rot_y, self.rot_y_str, FORMAT_ROT)
+        self._update_slider_label(self.rot_z, self.rot_z_str, FORMAT_ROT)
+        self.trans_x.trace_add(
+            "write",
+            lambda *args: self._update_slider_label(
+                self.trans_x, self.trans_x_str, FORMAT_TRANS
+            ),
+        )
+        self.trans_y.trace_add(
+            "write",
+            lambda *args: self._update_slider_label(
+                self.trans_y, self.trans_y_str, FORMAT_TRANS
+            ),
+        )
+        self.trans_z.trace_add(
+            "write",
+            lambda *args: self._update_slider_label(
+                self.trans_z, self.trans_z_str, FORMAT_TRANS
+            ),
+        )
+        self.rot_x.trace_add(
+            "write",
+            lambda *args: self._update_slider_label(
+                self.rot_x, self.rot_x_str, FORMAT_ROT
+            ),
+        )
+        self.rot_y.trace_add(
+            "write",
+            lambda *args: self._update_slider_label(
+                self.rot_y, self.rot_y_str, FORMAT_ROT
+            ),
+        )
+        self.rot_z.trace_add(
+            "write",
+            lambda *args: self._update_slider_label(
+                self.rot_z, self.rot_z_str, FORMAT_ROT
+            ),
+        )
+
+    def _update_slider_label(
+        self, double_var: tk.DoubleVar, string_var: tk.StringVar, fmt_spec: str
+    ):  # (Same as before)
+        """Updates the StringVar label from the DoubleVar slider value."""
+        try:
+            string_var.set(fmt_spec.format(double_var.get()))
+        except tk.TclError:
+            pass
+        except Exception as e:
+            print(f"Error updating slider label: {e}", file=sys.stderr)
+
+    def _setup_gui(self):  # (Same as before)
+        """Creates and arranges main GUI elements, sets up styling and resizing."""
+        style = ttk.Style(self.master)
+        style.theme_use("clam")
+        style.configure(
+            "TButton",
+            padding=5,
+            relief="flat",
+            background=BG_COLOR_BTN,
+            foreground="black",
+            font=FONT_DEFAULT,
+            borderwidth=1,
+        )
+        style.map(
+            "TButton",
+            background=[
+                ("active", BG_COLOR_BTN_ACTIVE),
+                ("pressed", BG_COLOR_BTN_ACTIVE),
+            ],
+        )
+        style.configure(
+            "TLabelframe",
+            padding=6,
+            background=BG_COLOR_LBLFRAME,
+            relief="groove",
+            borderwidth=1,
+        )
+        style.configure(
+            "TLabelframe.Label",
+            background=BG_COLOR_LBLFRAME,
+            foreground=FG_COLOR_LABEL,
+            font=FONT_BOLD,
+        )
+        style.configure(
+            "TCheckbutton",
+            background=BG_COLOR_LBLFRAME,
+            foreground=FG_COLOR_LABEL,
+            font=FONT_DEFAULT,
+            padding=(5, 2),
+        )
+        style.map("TCheckbutton", background=[("active", BG_COLOR_LBLFRAME)])
+        style.configure(
+            "TCombobox", padding=3, fieldbackground="white", background=BG_COLOR_BTN
+        )
+        style.configure(
+            "TLabel",
+            background=BG_COLOR_LBLFRAME,
+            foreground=FG_COLOR_LABEL,
+            font=FONT_DEFAULT,
+        )
+        style.configure("Bold.TLabel", font=FONT_BOLD, background=BG_COLOR_LBLFRAME)
+        style.configure("TEntry", padding=3, fieldbackground="white")
+        style.configure(
+            "Value.TLabel",
+            background=BG_COLOR_LBLFRAME,
+            foreground=FG_COLOR_LABEL,
+            font=FONT_DEFAULT,
+            anchor="e",
+        )
+        style.configure(
+            "Limit.TLabel",
+            background=BG_COLOR_LBLFRAME,
+            foreground="#666666",
+            font=("Arial", 8),
+        )
+        main_frame = tk.Frame(self.master, bg=BG_COLOR_FRAME)
         main_frame.grid(row=0, column=0, sticky="nsew")
         main_frame.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=3)
         main_frame.columnconfigure(1, weight=1)
-
-        plot_frame = tk.Frame(main_frame)
+        plot_frame = tk.Frame(main_frame, bg="white")
         plot_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        plot_frame.rowconfigure(0, weight=1)
-        plot_frame.columnconfigure(0, weight=1)
-
-        self.fig = plt.figure(figsize=(7, 7))  # Use figsize from constants?
+        self.fig = plt.figure(figsize=(7, 7), facecolor="white")
         try:
-            self.ax = self.fig.add_subplot(111, projection="3d")
+            self.ax = self.fig.add_subplot(111, projection="3d", facecolor="white")
         except Exception as e:
             print(f"Plotting Error: {e}", file=sys.stderr)
             self.master.quit()
             return
-
         self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
         canvas_widget = self.canvas.get_tk_widget()
         canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-        self.control_frame = tk.Frame(main_frame, bd=2, relief=tk.SUNKEN)
-        self.control_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+        self.control_frame = tk.Frame(main_frame, bg=BG_COLOR_FRAME, padx=5, pady=5)
+        self.control_frame.grid(row=0, column=1, sticky="nsew")
         self.control_frame.rowconfigure(0, weight=1)
         self.control_frame.columnconfigure(0, weight=1)
-
-        control_canvas = tk.Canvas(self.control_frame)
-        scrollbar = tk.Scrollbar(
+        control_canvas = tk.Canvas(
+            self.control_frame, borderwidth=0, background=BG_COLOR_FRAME
+        )
+        scrollbar = ttk.Scrollbar(
             self.control_frame, orient="vertical", command=control_canvas.yview
         )
-        scrollable_frame = tk.Frame(control_canvas)
-        scrollable_frame.bind(
+        self.scrollable_frame = tk.Frame(control_canvas, background=BG_COLOR_FRAME)
+        self.scrollable_frame.bind(
             "<Configure>",
             lambda e: control_canvas.configure(scrollregion=control_canvas.bbox("all")),
         )
-        control_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        control_canvas.configure(yscrollcommand=scrollbar.set)
-        control_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self._add_controls_to_frame(scrollable_frame)
-
-    def _add_controls_to_frame(self, parent_frame: tk.Frame):
-        """Adds control widgets, including representation style, to the frame."""
-
-        # --- Representation Style ---
-        style_frame = tk.LabelFrame(
-            parent_frame, text="Representation Style", padx=5, pady=5
+        canvas_window = control_canvas.create_window(
+            (0, 0), window=self.scrollable_frame, anchor="nw"
         )
-        style_frame.pack(pady=10, padx=5, fill="x", expand=False)
+        control_canvas.configure(yscrollcommand=scrollbar.set)
+        control_canvas.bind(
+            "<Configure>",
+            lambda e: control_canvas.itemconfig(canvas_window, width=e.width),
+        )
+        control_canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self._add_controls_to_frame(self.scrollable_frame)
+
+    def _add_controls_to_frame(self, parent_frame: tk.Frame):  # (Same as before)
+        """Creates and packs/grids all control widgets."""
+        style_frame = ttk.LabelFrame(
+            parent_frame, text="Representation Style", padding=(10, 5)
+        )
+        style_frame.pack(pady=5, padx=5, fill="x", expand=False)
         style_combo = ttk.Combobox(
             style_frame,
             textvariable=self.representation_style,
             values=REPRESENTATION_STYLES,
             state="readonly",
+            font=FONT_DEFAULT,
         )
-        style_combo.pack(fill="x", expand=True)
-        # Trigger redraw on style change (no transformation needed)
-        style_combo.bind("<<ComboboxSelected>>", self._draw_plot)  # Directly call draw
-
-        # --- Molecule Selection ---
-        select_frame = tk.LabelFrame(
-            parent_frame, text="Select Molecules to Modify", padx=5, pady=5
+        style_combo.pack(fill="x", expand=True, padx=5, pady=(0, 5))
+        style_combo.bind("<<ComboboxSelected>>", self._draw_plot)
+        select_frame = ttk.LabelFrame(
+            parent_frame, text="Select Molecules to Modify", padding=(10, 5)
         )
-        select_frame.pack(pady=10, padx=5, fill="x", expand=False)
-
-        self.select_all_var = tk.IntVar(
-            value=0
-        )  # Default to none selected unless only 1 mol
-        chk_all = tk.Checkbutton(
+        select_frame.pack(pady=5, padx=5, fill="x", expand=False)
+        self.select_all_var = tk.IntVar(value=0)
+        chk_all = ttk.Checkbutton(
             select_frame,
             text="All Molecules",
             variable=self.select_all_var,
             command=self._toggle_all_selection,
+            style="TCheckbutton",
         )
-        chk_all.pack(anchor="w")
-
-        self.selection_vars = {}  # Dictionary: name -> IntVar
-        sorted_mol_names = sorted(self.mol_name_to_id_map.keys())  # Consistent order
-
+        chk_all.pack(anchor="w", padx=5)
+        self.selection_vars = {}
+        sorted_mol_names = sorted(self.mol_name_to_id_map.keys())
         for mol_name in sorted_mol_names:
             mol_id = self.mol_name_to_id_map[mol_name]
-            # Check if this molecule is selected by default
             is_selected = mol_id in self.selected_molecule_indices
             var = tk.IntVar(value=1 if is_selected else 0)
-            chk = tk.Checkbutton(
+            chk = ttk.Checkbutton(
                 select_frame,
                 text=mol_name,
                 variable=var,
                 command=self._update_selection_from_individual,
+                style="TCheckbutton",
             )
-            chk.pack(anchor="w")
+            chk.pack(anchor="w", padx=5)
             self.selection_vars[mol_name] = var
-
-        # Update select_all state based on initial selection
         if (
             len(self.selected_molecule_indices) == len(self.molecules)
             and len(self.molecules) > 0
         ):
             self.select_all_var.set(1)
-
-        # --- Transformation Sliders ---
-        self.trans_x = tk.DoubleVar(value=0.0)
-        self.trans_y = tk.DoubleVar(value=0.0)
-        self.trans_z = tk.DoubleVar(value=0.0)
-        self.rot_x = tk.DoubleVar(value=0.0)
-        self.rot_y = tk.DoubleVar(value=0.0)
-        self.rot_z = tk.DoubleVar(value=0.0)
-        trans_frame = tk.LabelFrame(
-            parent_frame, text="Translation (Å)", padx=5, pady=5
+        center_selected_btn = ttk.Button(
+            select_frame,
+            text="Center Selected at Origin",
+            command=self._center_selected_at_origin,
+            style="TButton",
         )
-        trans_frame.pack(pady=10, padx=5, fill="x", expand=False)
+        center_selected_btn.pack(fill="x", padx=5, pady=(5, 2))
+        trans_frame = ttk.LabelFrame(
+            parent_frame, text="Relative Transformation", padding=(10, 5)
+        )
+        trans_frame.pack(pady=5, padx=5, fill="x", expand=False)
         self._create_slider(
             trans_frame,
-            "X:",
+            "Translate X:",
             self.trans_x,
+            self.trans_x_str,
+            FORMAT_TRANS,
             SLIDER_TRANSLATION_RANGE[0],
             SLIDER_TRANSLATION_RANGE[1],
             SLIDER_RESOLUTION_TRANS,
         )
         self._create_slider(
             trans_frame,
-            "Y:",
+            "Translate Y:",
             self.trans_y,
+            self.trans_y_str,
+            FORMAT_TRANS,
             SLIDER_TRANSLATION_RANGE[0],
             SLIDER_TRANSLATION_RANGE[1],
             SLIDER_RESOLUTION_TRANS,
         )
         self._create_slider(
             trans_frame,
-            "Z:",
+            "Translate Z:",
             self.trans_z,
+            self.trans_z_str,
+            FORMAT_TRANS,
             SLIDER_TRANSLATION_RANGE[0],
             SLIDER_TRANSLATION_RANGE[1],
             SLIDER_RESOLUTION_TRANS,
         )
-        rot_frame = tk.LabelFrame(parent_frame, text="Rotation (°)", padx=5, pady=5)
-        rot_frame.pack(pady=10, padx=5, fill="x", expand=False)
         self._create_slider(
-            rot_frame,
-            "X-axis:",
+            trans_frame,
+            "Rotate X (°):",
             self.rot_x,
+            self.rot_x_str,
+            FORMAT_ROT,
             SLIDER_ROTATION_RANGE[0],
             SLIDER_ROTATION_RANGE[1],
             SLIDER_RESOLUTION_ROT,
         )
         self._create_slider(
-            rot_frame,
-            "Y-axis:",
+            trans_frame,
+            "Rotate Y (°):",
             self.rot_y,
+            self.rot_y_str,
+            FORMAT_ROT,
             SLIDER_ROTATION_RANGE[0],
             SLIDER_ROTATION_RANGE[1],
             SLIDER_RESOLUTION_ROT,
         )
         self._create_slider(
-            rot_frame,
-            "Z-axis:",
+            trans_frame,
+            "Rotate Z (°):",
             self.rot_z,
+            self.rot_z_str,
+            FORMAT_ROT,
             SLIDER_ROTATION_RANGE[0],
             SLIDER_ROTATION_RANGE[1],
             SLIDER_RESOLUTION_ROT,
         )
-
-        # --- Action Buttons ---
-        action_frame = tk.Frame(parent_frame, padx=5, pady=5)
-        action_frame.pack(pady=10, padx=5, fill="x", expand=False)
-        save_btn = tk.Button(
-            action_frame, text="Save Combined Structure", command=self.save_structure
+        centroid_frame = ttk.LabelFrame(
+            parent_frame, text="System Centroid Control", padding=(10, 5)
         )
-        save_btn.pack(side=tk.LEFT, padx=5, expand=True, fill="x")
-        reset_btn = tk.Button(action_frame, text="Reset View", command=self.reset_view)
-        reset_btn.pack(side=tk.RIGHT, padx=5, expand=True, fill="x")
+        centroid_frame.pack(pady=5, padx=5, fill="x", expand=False)
+        center_origin_btn = ttk.Button(
+            centroid_frame,
+            text="Center System at Origin",
+            command=self._center_at_origin,
+            style="TButton",
+        )
+        center_origin_btn.pack(fill="x", padx=5, pady=2)
+        target_frame = ttk.Frame(centroid_frame, style="TLabelframe")
+        target_frame.pack(fill="x", padx=5, pady=(5, 2))
+        ttk.Label(target_frame, text="Target:", style="Bold.TLabel").grid(
+            row=0, column=0, columnspan=6, sticky="w", pady=(0, 3)
+        )
+        ttk.Label(target_frame, text="X:", style="TLabel").grid(
+            row=1, column=0, sticky="w", padx=(0, 2)
+        )
+        self.target_x_entry = ttk.Entry(
+            target_frame,
+            textvariable=self.target_x_var,
+            width=7,
+            font=FONT_DEFAULT,
+            justify="right",
+        )
+        self.target_x_entry.grid(row=1, column=1, padx=(0, 5))
+        ttk.Label(target_frame, text="Y:", style="TLabel").grid(
+            row=1, column=2, sticky="w", padx=(0, 2)
+        )
+        self.target_y_entry = ttk.Entry(
+            target_frame,
+            textvariable=self.target_y_var,
+            width=7,
+            font=FONT_DEFAULT,
+            justify="right",
+        )
+        self.target_y_entry.grid(row=1, column=3, padx=(0, 5))
+        ttk.Label(target_frame, text="Z:", style="TLabel").grid(
+            row=1, column=4, sticky="w", padx=(0, 2)
+        )
+        self.target_z_entry = ttk.Entry(
+            target_frame,
+            textvariable=self.target_z_var,
+            width=7,
+            font=FONT_DEFAULT,
+            justify="right",
+        )
+        self.target_z_entry.grid(row=1, column=5)
+        center_target_btn = ttk.Button(
+            centroid_frame,
+            text="Move System Centroid to Target",
+            command=self._center_at_target,
+            style="TButton",
+        )
+        center_target_btn.pack(fill="x", padx=5, pady=(3, 5))
+        action_frame = ttk.LabelFrame(parent_frame, text="Actions", padding=(10, 5))
+        action_frame.pack(pady=5, padx=5, fill="x", expand=False)
+        save_btn = ttk.Button(
+            action_frame,
+            text="Save Combined Structure",
+            command=self.save_structure,
+            style="TButton",
+        )
+        save_btn.pack(side=tk.LEFT, padx=5, pady=5, expand=True, fill="x")
+        reset_btn = ttk.Button(
+            action_frame, text="Reset View", command=self.reset_view, style="TButton"
+        )
+        reset_btn.pack(side=tk.RIGHT, padx=5, pady=5, expand=True, fill="x")
 
     def _create_slider(
         self,
         parent: tk.Frame,
         label_text: str,
-        variable: tk.DoubleVar,
+        double_var: tk.DoubleVar,
+        string_var: tk.StringVar,
+        format_spec: str,
         from_: float,
         to: float,
         resolution: float,
     ):
-        frame = tk.Frame(parent)
-        frame.pack(fill="x", pady=2)
-        label = tk.Label(frame, text=label_text, width=6, anchor="w")
-        label.pack(side=tk.LEFT)
-        # Link slider command to _update_view which handles transforms and redraw
+        """Helper creates slider row with labels and links command via handler."""
+        row_frame = ttk.Frame(parent, style="TLabelframe")
+        row_frame.pack(fill="x", pady=2, padx=5)
+        row_frame.columnconfigure(2, weight=1)
+        main_label = ttk.Label(
+            row_frame, text=label_text, width=12, anchor="w", style="TLabel"
+        )
+        main_label.grid(row=0, column=0, columnspan=5, sticky="w", pady=(0, 2))
+        min_label = ttk.Label(row_frame, text=f"{from_:.1f}", style="Limit.TLabel")
+        min_label.grid(row=1, column=1, sticky="e", padx=(0, 3))
+        # *** Use _handle_slider_change for command ***
         scale = tk.Scale(
-            frame,
-            variable=variable,
+            row_frame,
+            variable=double_var,
             orient=tk.HORIZONTAL,
-            length=200,
+            length=150,
             from_=from_,
             to=to,
             resolution=resolution,
-            command=self._update_view,
+            command=self._handle_slider_change,
+            showvalue=False,
+            troughcolor="black",
+            activebackground="#555555",
+            background=BG_COLOR_LBLFRAME,
+            highlightthickness=0,
+            bd=0,
+            sliderrelief="flat",
         )
-        scale.pack(side=tk.RIGHT, fill="x", expand=True)
+        scale.grid(row=1, column=2, sticky="ew")
+        max_label = ttk.Label(row_frame, text=f"{to:+.1f}", style="Limit.TLabel")
+        max_label.grid(row=1, column=3, sticky="w", padx=(3, 5))
+        value_label = ttk.Label(
+            row_frame, textvariable=string_var, width=5, style="Value.TLabel"
+        )
+        value_label.grid(row=1, column=4, sticky="e")
+
+    # --- Centroid Callbacks ---
+    def _calculate_current_centroid(self) -> Optional[np.ndarray]:
+        """Calculates the overall centroid of the currently VISIBLE coordinates."""
+        if not self.molecules:
+            print("Warning: Cannot calculate centroid, no molecules loaded.")
+            return None
+        all_coords = []
+        for mol in self.molecules:
+            final_coords = mol.transformed_coords + self.global_offset
+            if final_coords.size > 0:
+                all_coords.append(final_coords)
+        if not all_coords:
+            print("Warning: Cannot calculate centroid, no valid coordinates found.")
+            return None
+        try:
+            combined_coords = np.vstack(all_coords)
+        except ValueError:
+            print("Error: Could not stack coordinate arrays.", file=sys.stderr)
+            return None
+        return np.mean(combined_coords, axis=0)
+
+    def _center_at_origin(self):
+        """Callback to move the entire system centroid to (0,0,0)."""
+        print("Centering system at origin...")
+        current_centroid = self._calculate_current_centroid()
+        if current_centroid is not None:
+            offset_needed = -current_centroid
+            self.global_offset += offset_needed
+            print(
+                f"  Applying offset: {offset_needed}, New global offset: {self.global_offset}"
+            )
+            self._draw_plot()
+        else:
+            messagebox.showwarning(
+                "Centering Error", "Cannot calculate current centroid."
+            )
+
+    def _center_at_target(self):
+        """Callback to move the entire system centroid to user-defined target."""
+        print("Centering system at target...")
+        try:
+            tx = self.target_x_var.get()
+            ty = self.target_y_var.get()
+            tz = self.target_z_var.get()
+            target_centroid = np.array([tx, ty, tz])
+        except tk.TclError:
+            messagebox.showerror("Input Error", "Invalid target coordinates.")
+            return
+        except Exception as e:
+            messagebox.showerror(
+                "Input Error", f"Could not read target coordinates: {e}"
+            )
+            return
+        current_centroid = self._calculate_current_centroid()
+        if current_centroid is not None:
+            offset_needed = target_centroid - current_centroid
+            self.global_offset += offset_needed
+            print(
+                f"  Applying offset: {offset_needed}, New global offset: {self.global_offset}"
+            )
+            self._draw_plot()
+        else:
+            messagebox.showwarning(
+                "Centering Error", "Cannot calculate current centroid."
+            )
+
+    def _center_selected_at_origin(self):  # (MODIFIED - Updates final_translation)
+        """Callback moves each selected molecule's centroid to the origin."""
+        if not self.selected_molecule_indices:
+            messagebox.showwarning(
+                "No Selection", "Please select molecule(s) to center."
+            )
+            return
+        print(
+            f"Centering {len(self.selected_molecule_indices)} selected molecule(s) at origin..."
+        )
+        molecules_to_center = [
+            m for m in self.molecules if m.id in self.selected_molecule_indices
+        ]
+        if not molecules_to_center:
+            messagebox.showerror("Internal Error", "Selected molecule IDs not found.")
+            return
+
+        for molecule in molecules_to_center:
+            if (
+                molecule.transformed_coords.size > 0
+            ):  # Use current transformed coords for centroid calc
+                try:
+                    mol_centroid = np.mean(molecule.transformed_coords, axis=0)
+                    offset = -mol_centroid
+                    # Apply offset to the stored final_translation
+                    molecule.final_translation += offset
+                    # Recalculate transformed_coords based on the new final state
+                    molecule.apply_final_transformation()
+                    print(
+                        f"  Centered '{molecule.name}' (new final_translation: {molecule.final_translation})"
+                    )
+                except Exception as e:
+                    print(f"  Error centering '{molecule.name}': {e}", file=sys.stderr)
+                    messagebox.showerror(
+                        "Centering Error", f"Could not center '{molecule.name}':\n{e}"
+                    )
+            else:
+                print(f"  Skipping '{molecule.name}' as it has no coordinates.")
+
+        self._draw_plot()  # Redraw the plot with updated coordinates
 
     # --- Event Handlers & Update Logic ---
+
+    def _reset_sliders_to_zero(self):
+        """Helper function to reset all transformation sliders to zero."""
+        # Note: This will trigger the _handle_slider_change -> _update_view
+        # if the flag isn't set, which is prevented during selection changes.
+        if not all(
+            [
+                self.trans_x,
+                self.trans_y,
+                self.trans_z,
+                self.rot_x,
+                self.rot_y,
+                self.rot_z,
+            ]
+        ):
+            return
+        print("  Resetting sliders to zero")
+        self.trans_x.set(0.0)
+        self.trans_y.set(0.0)
+        self.trans_z.set(0.0)
+        self.rot_x.set(0.0)
+        self.rot_y.set(0.0)
+        self.rot_z.set(0.0)
+
+    def _sync_sliders_to_selection(self):
+        """Updates sliders based on the current selection."""
+        if len(self.selected_molecule_indices) == 1:
+            selected_id = self.selected_molecule_indices[0]
+            # Find the molecule object (safer than assuming list index matches ID)
+            selected_mol = next(
+                (m for m in self.molecules if m.id == selected_id), None
+            )
+            if selected_mol:
+                print(f"  Syncing sliders to '{selected_mol.name}'")
+                # Sync translation sliders
+                self.trans_x.set(selected_mol.final_translation[0])
+                self.trans_y.set(selected_mol.final_translation[1])
+                self.trans_z.set(selected_mol.final_translation[2])
+                # Reset rotation sliders (as planned, avoiding Euler complexity)
+                self.rot_x.set(0.0)
+                self.rot_y.set(0.0)
+                self.rot_z.set(0.0)
+                # TODO: Implement Euler angle extraction here if Scipy is available
+                # and rotation syncing is desired.
+                # if SCIPY_AVAILABLE:
+                #     try:
+                #         r = R.from_matrix(selected_mol.final_rotation_matrix)
+                #         # Use a suitable Euler sequence like 'zyx'
+                #         angles_deg = r.as_euler('zyx', degrees=True)
+                #         # Be careful with angle order ZYX -> set rot_z, rot_y, rot_x
+                #         self.rot_z.set(angles_deg[0])
+                #         self.rot_y.set(angles_deg[1])
+                #         self.rot_x.set(angles_deg[2])
+                #     except Exception as e:
+                #         print(f"Error converting rotation matrix to Euler angles: {e}", file=sys.stderr)
+                #         # Fallback: Reset rotation sliders if conversion fails
+                #         self.rot_x.set(0.0); self.rot_y.set(0.0); self.rot_z.set(0.0)
+            else:
+                print("  Warning: Selected molecule ID not found for slider sync.")
+                self._reset_sliders_to_zero()
+        else:
+            # 0 or >1 molecules selected, reset all sliders
+            print(
+                f"  Selection count is {len(self.selected_molecule_indices)}. Resetting sliders."
+            )
+            self._reset_sliders_to_zero()
+
     def _toggle_all_selection(self):
-        """Handle clicks on the 'All Molecules' checkbox."""
+        """Handles 'All Molecules' checkbox click. Syncs sliders."""
         select_all = self.select_all_var.get() == 1
         new_selected_indices = []
         for mol_name, var in self.selection_vars.items():
             var.set(1 if select_all else 0)
-            if select_all:
-                new_selected_indices.append(self.mol_name_to_id_map[mol_name])
+        if select_all:
+            new_selected_indices.extend(self.mol_name_to_id_map.values())
 
-        self.selected_molecule_indices = new_selected_indices
-        self._update_view()  # Update plot after changing selection
+        if set(self.selected_molecule_indices) != set(new_selected_indices):
+            self.selected_molecule_indices = new_selected_indices
+            print(f"Selection changed (Toggle All): {self.selected_molecule_indices}")
+            self._block_slider_command = (
+                True  # Prevent update_view trigger from slider.set()
+            )
+            self._sync_sliders_to_selection()
+            self._block_slider_command = False
+            self._draw_plot()  # Only redraw needed after syncing/resetting sliders
 
     def _update_selection_from_individual(self):
-        """Handle clicks on individual molecule checkboxes."""
-        current_selection = []
-        for mol_name, var in self.selection_vars.items():
-            if var.get() == 1:
-                current_selection.append(self.mol_name_to_id_map[mol_name])
-        self.selected_molecule_indices = current_selection
+        """Handles individual checkbox clicks. Syncs sliders if selection changes."""
+        new_selection = [
+            self.mol_name_to_id_map[name]
+            for name, var in self.selection_vars.items()
+            if var.get() == 1
+        ]
+        all_selected = (
+            len(new_selection) == len(self.molecules) and len(self.molecules) > 0
+        )
+        self.select_all_var.set(1 if all_selected else 0)
 
-        # Update 'All Molecules' checkbox state
-        if (
-            len(self.selected_molecule_indices) == len(self.molecules)
-            and len(self.molecules) > 0
-        ):
-            self.select_all_var.set(1)
-        else:
-            self.select_all_var.set(0)
+        if set(self.selected_molecule_indices) != set(new_selection):
+            self.selected_molecule_indices = new_selection
+            print(f"Selection changed (Individual): {self.selected_molecule_indices}")
+            self._block_slider_command = (
+                True  # Prevent update_view trigger from slider.set()
+            )
+            self._sync_sliders_to_selection()
+            self._block_slider_command = False
+            self._draw_plot()  # Only redraw needed after syncing/resetting sliders
 
-        self._update_view()  # Update plot after changing selection
+    def _handle_slider_change(self, event: Optional[Any] = None):
+        """Intermediate handler for slider command to respect the block flag."""
+        if self._block_slider_command:
+            # print("Slider command blocked") # Optional debug print
+            return  # Do nothing if change was programmatic
+        # print("Slider command executing _update_view") # Optional debug print
+        self._update_view()
 
     def _update_view(self, event: Optional[Any] = None):
-        """Update transformations based on sliders and redraw the plot."""
+        """
+        Callback for MANUAL slider changes. Updates the stored transform state
+        for selected molecules and redraws the plot.
+        """
+        if self._block_slider_command:  # Double check flag
+            print("Warning: _update_view called while command should be blocked.")
+            return
         if not self.molecules or self.ax is None or self.canvas is None:
             return
         if not all(
@@ -634,51 +1116,55 @@ class MoleculeVisualizer:
         ):
             return
 
-        # 1. Get current transformation parameters
-        trans_vector = np.array(
+        # Get current transform defined by sliders
+        current_trans_vector = np.array(
             [self.trans_x.get(), self.trans_y.get(), self.trans_z.get()]
         )
-        rot_matrix = build_rotation_matrix(
+        current_rot_matrix = build_rotation_matrix(
             self.rot_x.get(), self.rot_y.get(), self.rot_z.get()
         )
 
-        # 2. Apply transformations (modifies molecule.transformed_coords)
-        for idx, molecule in enumerate(self.molecules):
-            if (
-                molecule.id in self.selected_molecule_indices
-            ):  # Check against molecule's actual ID
-                molecule.apply_transformation(trans_vector, rot_matrix)
-            else:
-                molecule.reset_transformation()  # Reset others
+        # Update the final state for selected molecules ONLY
+        if not self.selected_molecule_indices:
+            # If nothing is selected, sliders shouldn't really do anything
+            # print("Slider moved but nothing selected.") # Optional info
+            pass  # Or maybe redraw? Let's just redraw in case global offset changed?
+        else:
+            print(
+                f"Applying slider transform to molecules: {self.selected_molecule_indices}"
+            )
+            for molecule in self.molecules:
+                if molecule.id in self.selected_molecule_indices:
+                    molecule.final_translation = current_trans_vector
+                    molecule.final_rotation_matrix = current_rot_matrix
+                    molecule.apply_final_transformation()  # Recalculate transformed_coords
 
-        # 3. Redraw the plot with current style
+        # Redraw the plot using updated transformed_coords + global_offset
         self._draw_plot()
 
-    # --- Plotting --- (Adapted from Streamlit Matplotlib version)
+    # --- Plotting ---
     def _draw_plot(self, event: Optional[Any] = None):
-        """Clear axes and redraw molecules based on current style and transformations."""
+        """Clears axes and redraws molecules based on current style and transformations."""
         if self.ax is None or self.canvas is None or self.fig is None:
             return
-
         self.ax.clear()
         style = self.representation_style.get()
-        all_coords_list = []
-        mol_colors = plt.cm.tab20  # Use a colormap with more distinct colors
-
-        # Plotting logic similar to plot_molecules_matplotlib
+        mol_colors = plt.cm.tab20
+        all_final_coords_list = []
+        # print(f"Drawing plot with style: {style}") # Debug print
         for idx, molecule in enumerate(self.molecules):
-            coords = molecule.transformed_coords
-            symbols = molecule.symbols
-            if coords.size == 0:
+            # molecule.apply_final_transformation() # Ensure coords are up-to-date? Should be handled by update_view/reset
+            coords_relative = molecule.transformed_coords
+            # These reflect final_translation/rotation
+            if coords_relative.size == 0:
                 continue
-            all_coords_list.append(coords)
-            x, y, z = coords.T
+            final_coords = coords_relative + self.global_offset
+            all_final_coords_list.append(final_coords)
+            symbols = molecule.symbols
+            x, y, z = final_coords.T
             atom_colors = get_element_property(symbols, CPK_COLORS, DEFAULT_ATOM_COLOR)
-            molecule_color = mol_colors(idx % mol_colors.N)  # Cycle through colors
-
-            # Limit labels in legend to avoid clutter
             show_label = molecule.name if idx < 15 else None
-
+            # --- Plotting logic based on style ---
             if style == STYLE_LINES:
                 self.ax.scatter(
                     x,
@@ -692,8 +1178,8 @@ class MoleculeVisualizer:
                     label=show_label,
                 )
                 for i, j in molecule.bonds:
-                    if 0 <= i < len(coords) and 0 <= j < len(coords):
-                        bond_coords = coords[[i, j]]
+                    if 0 <= i < len(final_coords) and 0 <= j < len(final_coords):
+                        bond_coords = final_coords[[i, j]]
                         self.ax.plot(
                             bond_coords[:, 0],
                             bond_coords[:, 1],
@@ -718,8 +1204,8 @@ class MoleculeVisualizer:
                     label=show_label,
                 )
                 for i, j in molecule.bonds:
-                    if 0 <= i < len(coords) and 0 <= j < len(coords):
-                        bond_coords = coords[[i, j]]
+                    if 0 <= i < len(final_coords) and 0 <= j < len(final_coords):
+                        bond_coords = final_coords[[i, j]]
                         self.ax.plot(
                             bond_coords[:, 0],
                             bond_coords[:, 1],
@@ -744,20 +1230,18 @@ class MoleculeVisualizer:
                 )
             else:
                 self.ax.scatter(x, y, z, label=f"{molecule.name} (Unknown Style)")
-
-        # Post-Plotting Adjustments
-        if not all_coords_list:
+        # --- Post-Plotting Adjustments ---
+        if not all_final_coords_list:
             self.ax.set_title("No molecules to plot")
             self.canvas.draw()
             return
-        all_coords_array = np.vstack(all_coords_list)
-        if all_coords_array.size == 0:
+        all_final_coords_array = np.vstack(all_final_coords_list)
+        if all_final_coords_array.size == 0:
             self.ax.set_title("No coordinates to plot")
             self.canvas.draw()
             return
-
-        min_coords = np.min(all_coords_array, axis=0)
-        max_coords = np.max(all_coords_array, axis=0)
+        min_coords = np.min(all_final_coords_array, axis=0)
+        max_coords = np.max(all_final_coords_array, axis=0)
         center = (max_coords + min_coords) / 2.0
         ranges = max_coords - min_coords
         buffer = max(1.0, np.max(ranges) * 0.1)
@@ -780,130 +1264,103 @@ class MoleculeVisualizer:
                 loc="center left",
                 bbox_to_anchor=(1.02, 0.5),
             )
-
-        self.fig.tight_layout(rect=[0, 0, 0.85, 1])  # Adjust layout for legend
+        self.fig.tight_layout(rect=[0, 0, 0.85, 1])
         self.canvas.draw()
 
     # --- File Operations & Reset ---
     def save_structure(self):
-        """Save the current state of all molecules to a combined XYZ file."""
+        """Saves the current state of all molecules to a combined XYZ file."""
         if not self.molecules:
             messagebox.showwarning("Save Structure", "No molecules loaded.")
             return
-
-        # Use filedialog to ask for save location
         save_path_str = filedialog.asksaveasfilename(
-            initialdir=".",  # Start in current directory
+            initialdir=".",
             initialfile=DEFAULT_OUTPUT_FILENAME,
             defaultextension=".xyz",
             filetypes=[("XYZ files", "*.xyz"), ("All files", "*.*")],
         )
         if not save_path_str:
-            return  # User cancelled
+            return
         save_path = Path(save_path_str)
-
         symbols_combined = []
-        coords_combined = []
+        coords_to_save_list = []
         for molecule in self.molecules:
             symbols_combined.extend(molecule.symbols)
-            coords_combined.append(molecule.transformed_coords)
-        if not coords_combined:
+            coords_to_save = molecule.transformed_coords + self.global_offset
+            coords_to_save_list.append(coords_to_save)
+        if not coords_to_save_list:
             messagebox.showerror("Save Error", "No coordinate data.")
             return
-
-        coords_combined_np = np.vstack(coords_combined)
+        coords_combined_np = np.vstack(coords_to_save_list)
         total_atoms = len(symbols_combined)
         try:
             with save_path.open("w") as file:
-                file.write(f"{total_atoms}\n")
-                file.write(f"Combined adjusted structure from Tkinter Visualizer\n")
+                file.write(
+                    f"{total_atoms}\nCombined adjusted structure (Global Offset: {self.global_offset})\n"
+                )
                 for symbol, coord in zip(symbols_combined, coords_combined_np):
                     file.write(
                         f"{symbol:<4} {coord[0]:>12.6f} {coord[1]:>12.6f} {coord[2]:>12.6f}\n"
                     )
             messagebox.showinfo("Save Successful", f"Structure saved to:\n{save_path}")
-            print(f"Combined adjusted structure saved to '{save_path}'")
         except IOError as e:
             messagebox.showerror("Save Error", f"Could not write file:\n{e}")
             print(f"Error saving file: {e}", file=sys.stderr)
         except Exception as e:
-            messagebox.showerror(
-                "Save Error", f"An unexpected error occurred during saving:\n{e}"
-            )
+            messagebox.showerror("Save Error", f"An unexpected error occurred: {e}")
             print(f"Unexpected error saving file: {e}", file=sys.stderr)
 
     def reset_view(self):
-        """Reset sliders to zero and update the plot."""
-        if not all(
-            [
-                self.trans_x,
-                self.trans_y,
-                self.trans_z,
-                self.rot_x,
-                self.rot_y,
-                self.rot_z,
-            ]
-        ):
-            return
-        self.trans_x.set(0.0)
-        self.trans_y.set(0.0)
-        self.trans_z.set(0.0)
-        self.rot_x.set(0.0)
-        self.rot_y.set(0.0)
-        self.rot_z.set(0.0)
-        # Update view resets transformations and redraws
-        self._update_view()
-        print("View reset to default.")
+        """Resets sliders, global offset, AND individual molecule transforms."""
+        print("Resetting view...")
+        self._block_slider_command = True  # Block command during programmatic reset
+        self._reset_sliders_to_zero()
+        self._block_slider_command = False
+        self.global_offset = np.zeros(3)
+        print(f"  Global offset reset to: {self.global_offset}")
+        self.target_x_var.set(0.0)
+        self.target_y_var.set(0.0)
+        self.target_z_var.set(0.0)
+        # Reset individual molecule transformations
+        for molecule in self.molecules:
+            molecule.reset_transformation()  # Resets internal state and transformed_coords
+        # Redraw the plot with everything reset
+        self._draw_plot()
+        print("View reset complete.")
 
 
 # --- Main Execution ---
 def main():
-    """Parse arguments and run the Tkinter Molecule Visualizer application."""
     parser = argparse.ArgumentParser(
-        description="Visualize and manipulate molecules from one or more XYZ files.",
+        description="Visualize molecules from XYZ files.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "xyz_files",
-        type=Path,
-        nargs="+",  # Accept one or more file paths
-        help="Path(s) to the input XYZ file(s).",
+        "xyz_files", type=Path, nargs="+", help="Path(s) to the input XYZ file(s)."
     )
-    # REMOVED: --nMolecules and --nAtoms arguments
-
     args = parser.parse_args()
-
-    # Basic file existence check
     valid_files = []
     for file_path in args.xyz_files:
         if not file_path.is_file():
             print(f"Error: Input file not found: '{file_path}'", file=sys.stderr)
         elif not file_path.name.lower().endswith(".xyz"):
             print(
-                f"Warning: Input file '{file_path.name}' does not have .xyz extension.",
+                f"Warning: Input file '{file_path.name}' no .xyz extension.",
                 file=sys.stderr,
             )
-            valid_files.append(file_path)  # Still try to process it
+            valid_files.append(file_path)
         else:
             valid_files.append(file_path)
-
     if not valid_files:
         print("Error: No valid input files found. Exiting.", file=sys.stderr)
         sys.exit(1)
-
-    # Start the GUI application
     try:
         root = tk.Tk()
-        # Pass the list of valid file paths
         app = MoleculeVisualizer(root, valid_files)
-        # Only run mainloop if app initialization didn't quit
         if root.winfo_exists():
             root.mainloop()
     except Exception as e:
-        print(
-            f"\n--- An unexpected error occurred launching the application ---",
-            file=sys.stderr,
-        )
+        print(f"\n--- Error launching application ---", file=sys.stderr)
         print(f"Error Type: {type(e).__name__}", file=sys.stderr)
         print(f"Error Details: {e}", file=sys.stderr)
         import traceback
@@ -914,17 +1371,14 @@ def main():
 
 
 if __name__ == "__main__":
-    # Need to handle potential Tkinter import errors if DISPLAY is not available
     try:
-        # Check if DISPLAY environment variable exists for Linux/macOS, needed for Tkinter
-        # This check is basic and might not cover all headless scenarios
         if sys.platform != "win32" and "DISPLAY" not in os.environ:
             print(
                 "Error: Cannot run Tkinter GUI. DISPLAY environment variable not set.",
                 file=sys.stderr,
             )
             print(
-                "If running headless or via SSH, ensure X11 forwarding is enabled or use a virtual framebuffer (e.g., Xvfb).",
+                "Ensure X11 forwarding or a virtual framebuffer (e.g., Xvfb) is active.",
                 file=sys.stderr,
             )
             sys.exit(1)
