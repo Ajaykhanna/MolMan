@@ -1,0 +1,252 @@
+## LLM Prompt: Generate Modular Molecule Visualizer Applications
+
+**Overall Goal:**
+
+Create a Python project named "MolMan" designed for visualizing and manipulating 3D molecular structures from XYZ files. The project must be highly modular, featuring a core library, plotting adapters, and two distinct user interface applications: one using Tkinter+Matplotlib (desktop) and one using Streamlit+Plotly (web). Implement persistent transformations for individual molecules and system-wide centering options. Include comprehensive docstrings and type hinting.
+
+**Project Structure:**
+
+Generate code for the following file structure. Ensure empty `__init__.py` files are created in each subdirectory to define them as packages.
+
+MolMan/├── molvis_core/            # Core library│   ├── init.py│   ├── constants.py│   ├── molecule.py│   ├── geometry.py│   ├── logic.py│   ├── io.py│   └── helpers.py├── molvis_plotting/        # Plotting adapters│   ├── init.py│   ├── matplotlib_plotter.py│   └── plotly_plotter.py├── molvis_tkinter/         # Tkinter App│   ├── init.py│   ├── app_tkinter.py│   └── tkinter_styles.py└── molvis_streamlit/       # Streamlit App├── init.py└── app_streamlit.pyrequirements.txtREADME.md                   # Generate this based on the final structure
+**Detailed Specifications:**
+
+**1. `molvis_core/constants.py`:**
+   - Define dictionaries for `CPK_COLORS` (use hex, include common elements like H, C, N, O, S, P, Halogens), `COVALENT_RADII`, `VDW_RADII`. Include default values (`DEFAULT_ATOM_COLOR`, `DEFAULT_COVALENT_RADIUS`, etc.).
+   - Define `AVERAGE_BOND_LENGTHS` dictionary (use `frozenset` for keys, include common single bonds like C-C, C-H, C-N, C-O, O-H, N-H). Define `BOND_TOLERANCE`.
+   - Define string constants for representation styles: `STYLE_LINES`, `STYLE_BALL_STICK`, `STYLE_SPACE_FILLING`. Define `REPRESENTATION_STYLES` list and `DEFAULT_REPRESENTATION`.
+   - Define GUI interaction constants: `SLIDER_TRANSLATION_RANGE`, `SLIDER_ROTATION_RANGE`, `SLIDER_RESOLUTION_TRANS`, `SLIDER_RESOLUTION_ROT`.
+   - Define `DEFAULT_OUTPUT_FILENAME`, `DEFAULT_BENZENE_DISTANCE`.
+   - Add module-level docstring.
+
+**2. `molvis_core/molecule.py`:**
+   - Define a dataclass `Molecule`.
+   - Attributes: `id: int`, `name: str`, `symbols: List[str]`, `coords: np.ndarray` (N,3, original), `bonds: List[Tuple[int, int]]`, `source_file_index: Optional[int] = None`, `source_file_name: Optional[str] = None`.
+   - **Important:** This class should *not* store transformation state like `transformed_coords`, `final_translation`, or `final_rotation_matrix`.
+   - Implement `__post_init__` for basic validation (symbol/coord length match).
+   - Implement properties: `num_atoms`, `centroid` (calculates from `coords`).
+   - Implement helper methods: `get_atom_coord(index)`, `get_atom_symbol(index)`.
+   - Add detailed class and method docstrings.
+
+**3. `molvis_core/helpers.py`:**
+   - Define function `get_element_property(symbols: List[str], property_dict: Dict[str, Any], default_value: Any) -> List[Any]`. It should perform case-insensitive lookup using `.capitalize()`.
+   - Add detailed docstring.
+
+**4. `molvis_core/geometry.py`:**
+   - Define `calculate_centroid(coords: np.ndarray) -> np.ndarray`. Handle empty input.
+   - Define `build_rotation_matrix(angle_x_deg: float, angle_y_deg: float, angle_z_deg: float) -> np.ndarray` using ZYX convention.
+   - Define `apply_transform(coords: np.ndarray, rotation_matrix: np.ndarray, translation_vector: np.ndarray, center_of_rotation: Optional[np.ndarray] = None) -> np.ndarray`. If `center_of_rotation` is None, use the centroid of `coords`. Handle empty `coords`. Return *new* transformed coordinates.
+   - Add detailed docstrings and type hints. Import `numpy`.
+
+**5. `molvis_core/logic.py`:**
+   - Define `get_bond_distance_range(atom1_symbol: str, atom2_symbol: str) -> Optional[Tuple[float, float]]`. Use constants from `molvis_core.constants` via relative import (`from .constants import ...`). Perform case-insensitive lookup.
+   - Define `determine_bonds(symbols: List[str], coords: np.ndarray) -> List[Tuple[int, int]]`. Use `get_bond_distance_range`. Handle edge cases (few atoms). Validate input shapes.
+   - Add detailed docstrings and type hints. Import `numpy`, `typing`, relevant constants.
+
+**6. `molvis_core/io.py`:**
+   - Define `BENZENE_SYMBOLS` and `BENZENE_COORDS` (use provided coordinates).
+   - Define `create_two_benzenes(distance: float = DEFAULT_BENZENE_DISTANCE) -> Tuple[List[str], np.ndarray, List[Tuple[int, int]]]`. Use constants via relative import. Return combined symbols, combined coords, and boundary indices `[(0, 12), (12, 24)]`.
+   - Define `load_xyz(file_path: Path) -> Tuple[Optional[List[str]], Optional[np.ndarray]]`. Handle file not found, empty file, invalid header, malformed lines, count mismatch (with warnings to stderr). Use `pathlib`.
+   - Define `load_multiple_xyz_from_text(xyz_multiblock_text: str, source_name: str = "Pasted Text") -> List[Tuple[List[str], np.ndarray]]`. Parse concatenated XYZ blocks, skipping invalid ones. Print warnings/success messages per block.
+   - Define `format_xyz_string(symbols: List[str], coords: np.ndarray, comment: str = "") -> str`. Ensure proper XYZ formatting (atom count, comment, `Symbol X Y Z` lines with specific spacing/precision). Validate input shapes.
+   - Add detailed docstrings and type hints. Import `numpy`, `pathlib`, `sys`, `typing`, relevant constants.
+
+**7. `molvis_plotting/matplotlib_plotter.py`:**
+   - Define Matplotlib-specific constants (`MPL_RADIUS_TO_SCATTER_SCALE...`, `MPL_LINE_WIDTH...`, `MPL_PLOT_ELEVATION`, `MPL_PLOT_AZIMUTH`).
+   - Define `plot_molecules_matplotlib(ax: plt.Axes, molecules: List[Molecule], molecule_transforms: Dict[int, Dict[str, np.ndarray]], style: str, global_offset: np.ndarray)`.
+   - Function logic:
+     - Clear axes (`ax.clear()`).
+     - Loop through `molecules`.
+     - Get the transform state (`translation`, `rotation` matrix) for the current molecule ID from `molecule_transforms` (use default identity/zero if missing).
+     - Calculate display coordinates by applying the molecule's transform and the `global_offset` to `molecule.coords` using `geometry.apply_transform`.
+     - Plot atoms (`ax.scatter`) and bonds (`ax.plot`) based on `style`. Use `helpers.get_element_property` for colors/radii. Use Matplotlib constants for scaling/linewidths. Handle different styles (`STYLE_LINES`, `STYLE_BALL_STICK`, `STYLE_SPACE_FILLING`).
+     - Set axis labels, title (including style), calculate and set appropriate axis limits based on *all* plotted coordinates, set view angle (`ax.view_init`).
+     - Add a legend if appropriate (e.g., <= 15 molecules), placed outside the plot area.
+   - Add detailed docstrings and type hints. Import `matplotlib.pyplot`, `numpy`, `typing`, and necessary components from `molvis_core`.
+
+**8. `molvis_plotting/plotly_plotter.py`:**
+   - Define Plotly-specific constants (`PLOTLY_RADIUS_TO_SIZE...`, `PLOTLY_LINE_WIDTH...`).
+   - Define `plot_molecules_plotly(molecules: List[Molecule], molecule_transforms: Dict[int, Dict[str, np.ndarray]], style: str, global_offset: np.ndarray) -> go.Figure`.
+   - Function logic:
+     - Create `fig = go.Figure()`.
+     - Prepare consolidated lists for bond coordinates (`bond_x`, `bond_y`, `bond_z`).
+     - Loop through `molecules`.
+     - Get transform state, calculate final display coordinates (`apply_transform` + `global_offset`).
+     - Add atom traces: `fig.add_trace(go.Scatter3d(mode='markers', ...))`. Set marker size/color based on style and core constants/helpers. Set `name` and `legendgroup` to `molecule.name`. Include hover text.
+     - Prepare bond coordinates (add segments to `bond_x/y/z`, separated by `None`).
+     - After loop, add a *single* trace for all bonds: `fig.add_trace(go.Scatter3d(mode='lines', ...))`. Set line width based on style. Set `showlegend=False`.
+     - Configure layout (`fig.update_layout`): Set scene properties (axes titles, aspect ratio `data`), main title (including style), legend properties, margins.
+     - Return `fig`.
+   - Add detailed docstrings and type hints. Import `plotly.graph_objects`, `numpy`, `typing`, and necessary components from `molvis_core`.
+
+**9. `molvis_tkinter/tkinter_styles.py`:**
+   - Define styling constants (`BG_COLOR_FRAME`, etc.).
+   - Define `setup_styles(root: tk.Tk)` function.
+   - Inside `setup_styles`: Initialize `ttk.Style`, set a theme (e.g., 'clam'), configure styles for `TButton`, `TLabelframe`, `TCheckbutton`, `TCombobox`, `TLabel`, `TEntry`, `TScrollbar` using the defined constants to achieve a clean, shaded look.
+   - Add detailed docstrings. Import `tkinter`, `ttk`.
+
+**10. `molvis_tkinter/app_tkinter.py`:**
+    - Import all necessary modules from Python, Tkinter, Matplotlib, and the custom libraries (`molvis_core`, `molvis_plotting`, `tkinter_styles`). Include the `sys.path` modification snippet at the top. Define local UI constants (`DEFAULT_WINDOW_SIZE`, `FORMAT_...`).
+    - Define `MoleculeVisualizer` class:
+        - `__init__`: Parse command line args (`argparse`) for optional XYZ files. If no files, call `core_io.create_two_benzenes` for default data. Call `_load_and_process_data`. Initialize state variables: `self.molecules` (list of `Molecule`), `self.molecule_transforms` (dict mapping ID to `{'translation': vec, 'rotation': mat}`), `self.global_offset`, `self.selected_molecule_ids`, `self.mol_name_to_id_map`, Tkinter variables (`tk.StringVar`, `tk.DoubleVar`) for widgets. Call GUI setup methods.
+        - `_load_and_process_data`: Populate `self.molecules`, `self.mol_name_to_id_map`, and initialize `self.molecule_transforms` with default identity/zero transforms for each molecule ID.
+        - `_setup_gui`: Create main layout, embed Matplotlib canvas, setup scrollable control frame. Call `setup_styles`. Call `_add_controls_to_frame`.
+        - `_add_controls_to_frame`: Create and grid/pack all widgets (`ttk` preferred): Style combobox, molecule checkboxes (use `molecule.name`), "Center Selected" button, transformation sliders (using `_create_slider`), centroid controls (buttons, entries), Save/Reset buttons. Bind commands/events correctly.
+        - `_create_slider`: Helper to create a slider row with description label, min/max labels, `tk.Scale`, and current value label (bound to `StringVar`). Link scale command to `_handle_slider_change`.
+        - `_setup_var_traces`, `_update_slider_label`: Implement logic to update value labels when slider `DoubleVar`s change.
+        - `_handle_slider_change`: Intermediate callback for sliders checking `_block_slider_command` before calling `_update_view`.
+        - `_update_view`: Callback for *manual* slider changes. Reads current slider values, builds transform vector/matrix, updates the `self.molecule_transforms` dict for *selected* molecule IDs, then calls `_draw_plot`.
+        - `_draw_plot`: Callback for style changes or called by other methods. Clears axes. Calls `matplotlib_plotter.plot_molecules_matplotlib` function, passing `self.ax`, `self.molecules`, `self.molecule_transforms`, current style, `self.global_offset`. Calls `self.canvas.draw()`.
+        - `_toggle_all_selection`, `_update_selection_from_individual`: Update `self.selected_molecule_ids`. Call `_sync_sliders_to_selection`. Call `_draw_plot`.
+        - `_sync_sliders_to_selection`: If 1 molecule selected, read its state from `self.molecule_transforms` and set translation sliders (`tk.DoubleVar.set`). Reset rotation sliders. If 0 or >1 selected, reset all sliders using `_reset_sliders_to_zero`. Use `_block_slider_command` flag during programmatic sets.
+        - `_reset_sliders_to_zero`: Helper to set all slider `DoubleVar`s to 0.
+        - `_calculate_current_centroid`: Helper calculates overall centroid based on current `molecule_transforms` and `global_offset`.
+        - `_center_at_origin`, `_center_at_target`: Update `self.global_offset`, call `_draw_plot`.
+        - `_center_selected_at_origin`: Calculate centroid for each selected molecule based on its current state in `self.molecule_transforms`, calculate offset, add offset to the *translation vector* stored in `self.molecule_transforms` for that molecule, call `_sync_sliders_to_selection`, call `_draw_plot`.
+        - `save_structure`: Open save dialog. For each molecule, calculate final coords using `geometry.apply_transform` with its state from `self.molecule_transforms` plus `self.global_offset`. Call `core_io.format_xyz_string`. Write file.
+        - `reset_view`: Reset `self.global_offset`, reset all entries in `self.molecule_transforms` to default, call `_sync_sliders_to_selection`, call `_draw_plot`.
+    - Define `main` function: Setup argparse (optional files `nargs='*'`), handle default data case, instantiate `MoleculeVisualizer`, start `mainloop`. Include Tkinter availability checks.
+    - Add detailed docstrings everywhere.
+
+**11. `molvis_streamlit/app_streamlit.py`:**
+    - Import `streamlit`, `plotly`, `numpy`, `copy`, `sys`, `os`, `Path`, and necessary components from `molvis_core` and `molvis_plotting.plotly_plotter`. Include `sys.path` modification.
+    - Define `main` function:
+        - Set page config. Add title.
+        - Initialize `st.session_state` using `setdefault` for all needed keys (`molecule_data`, `molecule_transforms`, `global_offset`, `input_processed`, `input_source_key`, `selected_mol_names`, `prev_selected_mol_names`, `current_style`, slider values `slider_trans_x` etc., target centroid values).
+        - Input Handling section (sidebar): `st.radio` for source, `st.file_uploader` (multi), `st.text_area`, "Load Default" option. Determine if input changed, prepare `files_to_process` or `load_default` flag.
+        - Data Processing section: If input changed, process `files_to_process` or `load_default` data using `core_io.load_xyz_from_text` / `core_io.load_multiple_xyz_from_text` / `core_io.create_two_benzenes` and `logic.determine_bonds`. Store results (`List[Molecule]`) in `st.session_state.molecule_data`. Initialize `st.session_state.molecule_transforms` dict. Reset other relevant states (`global_offset`, sliders, selection). Trigger `st.rerun()`.
+        - Display Area Guard: If no `molecule_data` in state, show info and `st.stop()`.
+        - Retrieve state: Get `molecules`, `molecule_names`, `mol_name_to_id_map`. Ensure `molecule_transforms` is initialized if missing.
+        - Sidebar Controls:
+            * Visualization: `st.selectbox` for style.
+            * Transformations: `st.multiselect` for molecule selection.
+            * Slider Sync Logic: Compare current `selected_mol_names` with `st.session_state.prev_selected_mol_names`. If changed, update `st.session_state.slider_...` values (sync translation if single selection, reset otherwise). Update `prev_selected_mol_names`. Set `rerun_for_sync = True`.
+            * Render `st.slider` widgets, using `st.session_state.slider_...` for the `value` argument. Read the returned values into local variables (`trans_x`, etc.). Update `st.session_state.slider_...` with these new values for persistence.
+            * Centering/Reset Controls: Add buttons ("Center Selected", "Reset View", "Center System Origin", "Move to Target") and `st.number_input` for target centroid.
+        - Button Action Logic: Check `if st.button(...)` for each action button. Modify the relevant state in `st.session_state` (`global_offset`, `molecule_transforms`). Set `rerun_after_action = True`.
+        - Apply Slider Transformations: Get selected IDs. Build transform vector/matrix from current slider values (local variables `trans_x`, etc.). Loop through selected IDs, update the corresponding entry in `st.session_state.molecule_transforms`.
+        - Plotting: Call `plotly_plotter.plot_molecules_plotly`, passing data/state from `st.session_state`. Display with `st.plotly_chart`.
+        - Save Functionality: Implement "Prepare" button logic to calculate final coords (using state from `molecule_transforms` and `global_offset`), format using `core_io.format_xyz_string`, store in session state. Implement `st.download_button` conditioned on prepared content.
+        - Final Rerun Trigger: `if rerun_for_sync or rerun_after_action: st.rerun()`.
+    - Add detailed docstrings. Call `main()` at the end.
+
+**12. `requirements.txt`:** List `numpy`, `matplotlib`, `plotly`, `streamlit`.
+**13. `README.md`:** Generate based on the final structure and usage.
+
+This detailed breakdown should provide sufficient guidance for the LLM.
+Here is the prompt you requested. It outlines the modular structure and details the requirements for each component and application, including the default data loading and persistent state logic.## LLM Prompt: Generate Modular Molecule Visualizer Applications (Tkinter & Streamlit)
+
+**Objective:**
+
+Create a Python project named "MolMan" for visualizing and manipulating 3D molecular structures from XYZ files. Implement a highly modular design with a core library, plotting adapters, and two separate UI applications: a Tkinter/Matplotlib desktop app and a Streamlit/Plotly web app. Ensure transformations applied to individual molecules are persistent. Include comprehensive docstrings and type hinting throughout.
+
+**Project Structure:**
+
+Generate code for the following file structure. Create empty `__init__.py` files in each subdirectory (`molvis_core`, `molvis_plotting`, `molvis_tkinter`, `molvis_streamlit`) to define them as Python packages.
+
+MolMan/├── molvis_core/            # Core library│   ├── init.py│   ├── constants.py│   ├── molecule.py│   ├── geometry.py│   ├── logic.py│   ├── io.py│   └── helpers.py├── molvis_plotting/        # Plotting adapters│   ├── init.py│   ├── matplotlib_plotter.py│   └── plotly_plotter.py├── molvis_tkinter/         # Tkinter App│   ├── init.py│   ├── app_tkinter.py│   └── tkinter_styles.py└── molvis_streamlit/       # Streamlit App├── init.py└── app_streamlit.pyrequirements.txtREADME.md                   # Generate a README summarizing the final structure and usage
+**Detailed Specifications:**
+
+**1. `molvis_core/constants.py`:**
+   - Define dictionaries: `CPK_COLORS` (H, C, N, O, S, P, F, Cl, Br, I required; use hex codes), `COVALENT_RADII`, `VDW_RADII` (same elements). Include `DEFAULT_ATOM_COLOR`, `DEFAULT_COVALENT_RADIUS`, `DEFAULT_VDW_RADIUS`.
+   - Define `AVERAGE_BOND_LENGTHS` (use `frozenset` keys; include C-C, C-H, C-N, C-O, O-H, N-H). Define `BOND_TOLERANCE` (e.g., 0.3).
+   - Define string constants & list for representation styles: `STYLE_LINES`, `STYLE_BALL_STICK`, `STYLE_SPACE_FILLING`, `REPRESENTATION_STYLES`, `DEFAULT_REPRESENTATION`.
+   - Define GUI interaction constants: `SLIDER_TRANSLATION_RANGE` (e.g., -10.0 to 10.0), `SLIDER_ROTATION_RANGE` (-180.0 to 180.0), `SLIDER_RESOLUTION_TRANS` (0.1), `SLIDER_RESOLUTION_ROT` (1.0).
+   - Define `DEFAULT_OUTPUT_FILENAME` ("combined_adjusted_molecule.xyz"), `DEFAULT_BENZENE_DISTANCE` (3.0).
+   - Define default bond/edge colors: `DEFAULT_BOND_COLOR`, `ATOM_EDGE_COLOR`.
+   - Add module-level docstring explaining its purpose. Use type hints for constants.
+
+**2. `molvis_core/molecule.py`:**
+   - Define a dataclass `Molecule`.
+   - Attributes (with type hints): `id: int`, `name: str`, `symbols: List[str]`, `coords: np.ndarray` (original N,3), `bonds: List[Tuple[int, int]]`, `source_file_index: Optional[int] = None`, `source_file_name: Optional[str] = None`. **Do not include transformation state here.**
+   - Implement `__post_init__` for validation (symbol/coord length match, coord shape). Allow empty coords/symbols (0 atoms).
+   - Implement read-only properties: `num_atoms`, `centroid` (calculates from `coords` using `geometry.calculate_centroid`).
+   - Add detailed class, attribute, and property docstrings (PEP 257). Import `numpy`, `typing`, `dataclasses`.
+
+**3. `molvis_core/helpers.py`:**
+   - Define function `get_element_property(symbols: List[str], property_dict: Dict[str, Any], default_value: Any) -> List[Any]`. Implement case-insensitive lookup using `.capitalize()`.
+   - Add detailed docstring and type hints. Import `typing`.
+
+**4. `molvis_core/geometry.py`:**
+   - Define `calculate_centroid(coords: np.ndarray) -> np.ndarray`. Handle empty input, validate shape.
+   - Define `build_rotation_matrix(angle_x_deg: float, angle_y_deg: float, angle_z_deg: float) -> np.ndarray` using ZYX convention (R = Rz * Ry * Rx).
+   - Define `apply_transform(coords: np.ndarray, rotation_matrix: np.ndarray, translation_vector: np.ndarray, center_of_rotation: Optional[np.ndarray] = None) -> np.ndarray`. If `center_of_rotation` is None, use `calculate_centroid(coords)`. Handle empty `coords`. Return *new* transformed coordinates. Validate input shapes.
+   - Add detailed docstrings and type hints. Import `numpy`, `typing`.
+
+**5. `molvis_core/logic.py`:**
+   - Define `get_bond_distance_range(atom1_symbol: str, atom2_symbol: str) -> Optional[Tuple[float, float]]`. Use constants via relative import (`from .constants import ...`). Perform case-insensitive lookup.
+   - Define `determine_bonds(symbols: List[str], coords: np.ndarray) -> List[Tuple[int, int]]`. Use `get_bond_distance_range`. Handle edge cases. Validate input shapes. Use squared distances for efficiency.
+   - Add detailed docstrings and type hints. Import `numpy`, `typing`, relative constants.
+
+**6. `molvis_core/io.py`:**
+   - Define `BENZENE_SYMBOLS` and `BENZENE_COORDS` constants with accurate coordinates for a benzene molecule.
+   - Define `create_two_benzenes(distance: float = DEFAULT_BENZENE_DISTANCE) -> Tuple[List[str], np.ndarray, List[Tuple[int, int]]]`. Use constants via relative import. Return combined symbols, coords, and boundary indices `[(0, 12), (12, 24)]`.
+   - Define `load_xyz(file_path: Path) -> Tuple[Optional[List[str]], Optional[np.ndarray]]`. Handle file errors, format errors (header, lines), count mismatches gracefully (print warnings to stderr). Return `(None, None)` on failure.
+   - Define `load_multiple_xyz_from_text(xyz_multiblock_text: str, source_name: str = "Pasted Text") -> List[Tuple[List[str], np.ndarray]]`. Parse concatenated XYZ blocks, skipping invalid ones. Print warnings/success per block. Return list of `(symbols, coords)` tuples.
+   - Define `format_xyz_string(symbols: List[str], coords: np.ndarray, comment: str = "") -> str`. Ensure standard XYZ format (atom count, comment, left-aligned symbol, formatted coords). Validate inputs.
+   - Add detailed docstrings and type hints. Import `numpy`, `pathlib`, `sys`, `typing`, relative constants.
+
+**7. `molvis_plotting/matplotlib_plotter.py`:**
+   - Define Matplotlib-specific constants (`MPL_RADIUS_TO_SCATTER_SCALE...`, `MPL_LINE_WIDTH...`, `MPL_PLOT_ELEVATION`, `MPL_PLOT_AZIMUTH`).
+   - Define `plot_molecules_matplotlib(ax: plt.Axes, molecules: List[Molecule], molecule_transforms: Dict[int, Dict[str, np.ndarray]], style: str, global_offset: np.ndarray)`.
+   - Logic: Clear axes. Loop `molecules`. Get transform state (`translation`, `rotation`) from `molecule_transforms` using `molecule.id`. Calculate `final_coords` using `geometry.apply_transform(molecule.coords, ...)` plus `global_offset`. Plot atoms (`ax.scatter`) and bonds (`ax.plot`) based on `style`, using `helpers.get_element_property` and constants. Set labels, title, limits, view angle. Add legend (max 15 items, placed outside).
+   - Add detailed docstrings and type hints. Import `matplotlib.pyplot`, `numpy`, `typing`, and necessary components from `molvis_core` using absolute imports (`from molvis_core...`).
+
+**8. `molvis_plotting/plotly_plotter.py`:**
+   - Define Plotly-specific constants (`PLOTLY_RADIUS_TO_SIZE...`, `PLOTLY_LINE_WIDTH...`).
+   - Define `plot_molecules_plotly(molecules: List[Molecule], molecule_transforms: Dict[int, Dict[str, np.ndarray]], style: str, global_offset: np.ndarray) -> go.Figure`.
+   - Logic: Create `go.Figure`. Prepare consolidated bond lists. Loop `molecules`. Get transform state. Calculate `final_coords`. Add atom traces (`go.Scatter3d(mode='markers')`) with size/color based on style, using `helpers.get_element_property`. Set `name` and `legendgroup` to `molecule.name`. Add hover text. Populate bond lists. After loop, add single bond trace (`go.Scatter3d(mode='lines')`) with `showlegend=False`. Configure layout (`fig.update_layout`) including scene, title, legend. Return `fig`.
+   - Add detailed docstrings and type hints. Import `plotly.graph_objects`, `numpy`, `typing`, `molvis_core` components.
+
+**9. `molvis_tkinter/tkinter_styles.py`:**
+   - Define local styling constants (`BG_COLOR_FRAME`, etc.).
+   - Define `setup_styles(root: tk.Tk)` function to configure `ttk.Style` (use 'clam' theme, configure `TButton`, `TLabelframe`, `TCheckbutton`, `TCombobox`, `TLabel`, `TEntry`, `TScrollbar`) using the local constants for a clean, shaded look.
+   - Add detailed docstrings. Import `tkinter`, `ttk`.
+
+**10. `molvis_tkinter/app_tkinter.py`:**
+    - Add `sys.path` modification snippet at the top.
+    - Import necessary modules (Python, Tkinter, Matplotlib, NumPy, custom libraries). Import specific styling constants needed directly (e.g., `BG_COLOR_FRAME`) from `tkinter_styles`. Define local UI constants (`DEFAULT_WINDOW_SIZE`, `FORMAT_...`).
+    - Define `MoleculeVisualizer` class:
+        - `__init__`: Handle `molecule_source` (list of Paths or generated tuple). Call `_load_and_process_data`. Initialize state: `self.molecules`, `self.molecule_transforms` (dict mapping ID to `{'translation': vec, 'rotation': mat}`), `self.global_offset`, `self.selected_molecule_ids`, UI variables (`tk.StringVar/DoubleVar` for sliders, style, target centroid). Handle loading failure. Setup GUI & initial plot.
+        - `_load_and_process_data`: Load data using `core_io`, determine bonds using `logic`, create `Molecule` objects, populate `self.molecules`, `self.mol_name_to_id_map`, initialize `self.molecule_transforms`.
+        - `_setup_gui`, `_add_controls_to_frame`, `_create_slider`: Implement GUI layout using `ttk` widgets where possible (`tk.Scale` is acceptable). Use styles from `tkinter_styles`. Include all controls: style selection, molecule checkboxes, "Center Selected" button, sliders with value/limit labels, system centroid controls, Save/Reset buttons. Bind events correctly.
+        - `_setup_var_traces`, `_update_slider_label`: Link slider `DoubleVar`s to `StringVar`s for labels.
+        - `_handle_slider_change`, `_update_view`: Implement logic to update `self.molecule_transforms` for selected molecules based on *manual* slider changes (respecting `_block_slider_command` flag) and trigger redraw.
+        - `_draw_plot`: Call external `plot_molecules_matplotlib` function, passing necessary state (`self.ax`, `self.molecules`, `self.molecule_transforms`, style, `self.global_offset`). Draw canvas.
+        - Selection Callbacks (`_toggle_all_selection`, `_update_selection_from_individual`): Update `self.selected_molecule_ids`. Call `_sync_sliders_to_selection`. Call `_draw_plot`.
+        - `_sync_sliders_to_selection`: If 1 molecule selected, update translation sliders (`.set()`) based on its state in `self.molecule_transforms`; reset rotation sliders. If 0 or >1 selected, reset all sliders. Use `_block_slider_command` during programmatic sets.
+        - `_reset_sliders_to_zero`: Helper to set slider vars to 0.
+        - Centroid Callbacks (`_calculate_current_centroid`, `_center_at_origin`, `_center_at_target`, `_center_selected_at_origin`): Implement logic using `self.global_offset` or modifying `self.molecule_transforms[id]['translation']`. Trigger redraw. Ensure centroid calculations use current state.
+        - `save_structure`: Calculate final coords for all molecules using `geometry.apply_transform` with stored state + global offset. Call `core_io.format_xyz_string`. Use `filedialog.asksaveasfilename`.
+        - `reset_view`: Reset `self.global_offset`, reset all entries in `self.molecule_transforms`, call `_sync_sliders_to_selection`, call `_draw_plot`.
+    - Define `main`: Parse args (`nargs='*'`). Load default data (`core_io.create_two_benzenes`) if no args. Instantiate `MoleculeVisualizer`. Start `mainloop`. Include Tkinter availability checks.
+    - Add detailed docstrings for class and all methods.
+
+**11. `molvis_streamlit/app_streamlit.py`:**
+    - Add `sys.path` modification snippet. Import necessary modules.
+    - Define `main` function:
+        - Set page config. Initialize `st.session_state` for all required keys (`molecule_data`, `molecule_transforms`, `global_offset`, `input_processed`, `input_source_key`, `selected_mol_names`, `prev_selected_mol_names`, `current_style`, slider values `slider_trans_x` etc., target centroid values).
+        - Input Handling (sidebar): `st.radio` (Upload/Paste/Default), `st.file_uploader`(multi), `st.text_area`. Determine `input_changed`, prepare `files_to_process` or `load_default`.
+        - Data Processing: If input changed, process data using `core_io` and `logic`. Store `List[Molecule]` in `st.session_state.molecule_data`. Initialize `st.session_state.molecule_transforms`. Reset other states (`global_offset`, sliders, selection). `st.rerun()`.
+        - Display Area Guard: Check for `molecule_data` in state, show info and `st.stop()` if missing.
+        - Retrieve state: Get `molecules`, `molecule_names`, `mol_name_to_id_map`. Ensure `molecule_transforms` exists.
+        - Sidebar Controls: Render `st.selectbox` (style), `st.multiselect` (selection). Implement slider sync logic by comparing current selection to `prev_selected_mol_names` and updating `st.session_state.slider_...` variables; set `rerun_for_sync = True`. Render `st.slider`s using session state for `value`. Read slider return values into local vars (`trans_x`, etc.) and update session state slider vars. Render centroid control buttons and `st.number_input`.
+        - Button Action Logic: Check `if st.button(...)` for each action *before* applying slider transforms. Modify state in `st.session_state` (`global_offset`, `molecule_transforms`). Set `rerun_after_action = True`.
+        - Apply Slider Transformations: Get selected IDs. Build transform vector/matrix from current slider values. Update `st.session_state.molecule_transforms` for selected IDs.
+        - Plotting: Call `plotly_plotter.plot_molecules_plotly` passing data/state from `st.session_state`. Display with `st.plotly_chart`.
+        - Save Functionality: Implement "Prepare" button and `st.download_button` using `core_io.format_xyz_string` and final coordinates.
+        - Final Rerun Trigger: `if rerun_for_sync or rerun_after_action: st.rerun()`.
+    - Add detailed docstrings. Call `main()`.
+
+**12. `requirements.txt`:**
+    - Include `numpy`, `matplotlib`, `plotly`, `streamlit`. Add version specifiers (e.g., `>=`).
+
+**13. `README.md`:**
+    - Generate a README summarizing the project structure, modules, setup, and execution instructions for both Tkinter and Streamlit apps, including the default data case.
+
+**General Requirements:**
+    - Use type hints extensively.
+    - Add comprehensive PEP 257 compliant docstrings to all modules, classes, functions, and methods.
+    - Include comments only for non-obvious logic.
+    - Ensure robust error handling (e.g., file loading, invalid input).
+    - Ensure consistent naming conventions.
