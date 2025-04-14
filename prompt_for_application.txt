@@ -2,13 +2,42 @@
 
 **Overall Goal:**
 
-Create a Python project named "MolMan" designed for visualizing and manipulating 3D molecular structures from XYZ files. The project must be highly modular, featuring a core library, plotting adapters, and two distinct user interface applications: one using Tkinter+Matplotlib (desktop) and one using Streamlit+Plotly (web). Implement persistent transformations for individual molecules and system-wide centering options. Include comprehensive docstrings and type hinting.
+Create a Python project named "MolMan" designed for visualizing and manipulating 3D molecular structures from XYZ files. The project must be highly modular, featuring a core library,
+plotting adapters, and two distinct user interface applications: one using Tkinter+Matplotlib (desktop) and one using Streamlit+Plotly (web). Implement persistent transformations for
+individual molecules and system-wide centering options. Include comprehensive docstrings and type hinting.
 
 **Project Structure:**
 
 Generate code for the following file structure. Ensure empty `__init__.py` files are created in each subdirectory to define them as packages.
 
-MolMan/├── molvis_core/            # Core library│   ├── init.py│   ├── constants.py│   ├── molecule.py│   ├── geometry.py│   ├── logic.py│   ├── io.py│   └── helpers.py├── molvis_plotting/        # Plotting adapters│   ├── init.py│   ├── matplotlib_plotter.py│   └── plotly_plotter.py├── molvis_tkinter/         # Tkinter App│   ├── init.py│   ├── app_tkinter.py│   └── tkinter_styles.py└── molvis_streamlit/       # Streamlit App├── init.py└── app_streamlit.pyrequirements.txtREADME.md                   # Generate this based on the final structure
+MolMan/
+├── molvis_core
+   /# Core library│
+      ├── init.py│
+      ├── constants.py│
+      ├── molecule.py│
+      ├── geometry.py│
+      ├── logic.py│
+      ├── io.py│
+      └── helpers.py
+   ├── molvis_plotting
+   /# Plotting adapters│
+      ├── init.py│
+      ├── matplotlib_plotter.py│
+      └── plotly_plotter.py
+   ├── molvis_tkinter
+   /# Tkinter App│
+      ├── init.py│
+      ├── app_tkinter.py│
+      └── tkinter_styles.py
+   └── molvis_streamlit
+   /# Streamlit App
+      ├── init.py
+      └── app_streamlit.py
+   requirements.txt
+   README.md
+# Generate this based on the final structure
+
 **Detailed Specifications:**
 
 **1. `molvis_core/constants.py`:**
