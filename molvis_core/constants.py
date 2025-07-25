@@ -134,6 +134,8 @@ AVERAGE_BOND_LENGTHS: Dict[FrozenSet[str], float] = {
     # Example double/triple bonds (can be added if specific detection needed)
     # frozenset(["C", "C", "double"]): 1.34,
     # frozenset(["C", "O", "double"]): 1.21,
+    frozenset(["N", "N", "double"]): 1.24,
+    frozenset(["N", "N", "triple"]): 1.10,
 }
 # Tolerance in Angstroms for bond determination
 BOND_TOLERANCE: float = 0.3
