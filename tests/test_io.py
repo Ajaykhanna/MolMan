@@ -9,6 +9,14 @@ import pytest
 import numpy as np
 from pathlib import Path
 from molvis_core import io as core_io
+from molvis_core.exceptions import (
+    FileNotFoundError as MolManFileNotFoundError,
+    EmptyFileError,
+    FileFormatError,
+    FileParseError,
+    AtomCountMismatchError,
+    InvalidCoordinatesError,
+)
 
 
 class TestLoadXYZ:
@@ -49,10 +57,9 @@ class TestLoadXYZ:
     @pytest.mark.unit
     @pytest.mark.io
     def test_load_xyz_nonexistent_file(self):
-        """Test loading non-existent file returns None."""
-        result = core_io.load_xyz(Path('/nonexistent/file.xyz'))
-
-        assert result == (None, None)
+        """Test loading non-existent file raises exception."""
+        with pytest.raises(MolManFileNotFoundError):
+            core_io.load_xyz(Path('/nonexistent/file.xyz'))
 
     @pytest.mark.unit
     @pytest.mark.io
@@ -98,10 +105,9 @@ H     0.000000    -0.763239    -0.477047
     @pytest.mark.unit
     @pytest.mark.io
     def test_load_from_text_empty_string(self):
-        """Test loading from empty string."""
-        result = core_io.load_xyz_from_text("")
-
-        assert result == (None, None)
+        """Test loading from empty string raises exception."""
+        with pytest.raises(EmptyFileError):
+            core_io.load_xyz_from_text("")
 
     @pytest.mark.unit
     @pytest.mark.io
@@ -119,15 +125,14 @@ Empty molecule
     @pytest.mark.unit
     @pytest.mark.io
     def test_load_from_text_malformed_header(self):
-        """Test handling malformed header."""
+        """Test handling malformed header raises exception."""
         xyz_text = """not_a_number
 Comment line
 C     0.0     0.0     0.0
 """
 
-        result = core_io.load_xyz_from_text(xyz_text)
-
-        assert result == (None, None)
+        with pytest.raises(FileFormatError):
+            core_io.load_xyz_from_text(xyz_text)
 
     @pytest.mark.unit
     @pytest.mark.io
@@ -323,7 +328,7 @@ class TestFormatXYZString:
         symbols = ['C', 'H']
         coords = np.array([[0.0, 0.0, 0.0]])  # Only 1 coord for 2 symbols
 
-        with pytest.raises(ValueError, match="does not match"):
+        with pytest.raises(AtomCountMismatchError):
             core_io.format_xyz_string(symbols, coords)
 
     @pytest.mark.unit
@@ -333,7 +338,7 @@ class TestFormatXYZString:
         symbols = ['C']
         coords = np.array([0.0, 0.0, 0.0])  # 1D instead of 2D
 
-        with pytest.raises(ValueError, match="shape \\(N, 3\\)"):
+        with pytest.raises(InvalidCoordinatesError):
             core_io.format_xyz_string(symbols, coords)
 
 
