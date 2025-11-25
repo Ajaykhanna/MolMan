@@ -8,6 +8,10 @@ centroid calculations, and state management.
 import pytest
 import numpy as np
 from molvis_core.molecule import Molecule
+from molvis_core.exceptions import (
+    InvalidCoordinatesError,
+    AtomCountMismatchError,
+)
 
 
 class TestMoleculeInitialization:
@@ -45,7 +49,7 @@ class TestMoleculeInitialization:
     @pytest.mark.unit
     def test_molecule_invalid_coords_shape(self):
         """Test that invalid coordinate shape raises error."""
-        with pytest.raises(ValueError, match="Coordinates must be a NumPy array"):
+        with pytest.raises(InvalidCoordinatesError):
             Molecule(
                 id=0,
                 name="Invalid",
@@ -57,7 +61,7 @@ class TestMoleculeInitialization:
     @pytest.mark.unit
     def test_molecule_mismatched_symbols_coords(self):
         """Test that mismatched symbols and coords raises error."""
-        with pytest.raises(ValueError, match="Number of symbols"):
+        with pytest.raises(AtomCountMismatchError):
             Molecule(
                 id=0,
                 name="Mismatched",

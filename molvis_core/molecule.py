@@ -9,8 +9,18 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 import numpy as np
 
+from .logging_config import get_logger
+from .exceptions import (
+    InvalidMoleculeError,
+    AtomCountMismatchError,
+    InvalidCoordinatesError,
+)
+
 # Import necessary geometry functions (using relative import)
 from .geometry import calculate_centroid
+
+# Initialize logger for this module
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -53,31 +63,49 @@ class Molecule:
     final_rotation_matrix: np.ndarray = field(default_factory=lambda: np.identity(3))
 
     def __post_init__(self):
-        """Basic validation and initial state calculation after initialization."""
+        """
+        Basic validation and initial state calculation after initialization.
+
+        Raises:
+            InvalidCoordinatesError: If coordinates have invalid shape
+            AtomCountMismatchError: If symbols and coordinates counts don't match
+        """
+        logger.debug(f"Initializing molecule '{self.name}' (ID: {self.id}) with {len(self.symbols)} atoms")
+
         if (
             not isinstance(self.coords, np.ndarray)
             or self.coords.ndim != 2
             or self.coords.shape[1] != 3
         ):
             if self.coords.size != 0:
-                raise ValueError("Coordinates must be a NumPy array of shape (N, 3)")
+                logger.error(f"Invalid coordinates shape for molecule '{self.name}': {self.coords.shape}")
+                raise InvalidCoordinatesError(
+                    f"Coordinates must be a NumPy array of shape (N, 3), got {self.coords.shape}"
+                )
+
         if len(self.symbols) != self.coords.shape[0]:
             if not (len(self.symbols) == 0 and self.coords.shape[0] == 0):
-                raise ValueError(
-                    f"Number of symbols ({len(self.symbols)}) must match number of coordinate rows ({self.coords.shape[0]})"
+                logger.error(
+                    f"Atom count mismatch in molecule '{self.name}': "
+                    f"{len(self.symbols)} symbols vs {self.coords.shape[0]} coordinates"
                 )
+                raise AtomCountMismatchError(len(self.symbols), self.coords.shape[0])
+
         # Calculate initial transformed_coords based on default identity/zero transforms
         self.apply_final_transformation()
+        logger.info(f"Successfully initialized molecule '{self.name}' with {self.num_atoms} atoms")
 
     def reset_transformation(self):
         """
         Resets the stored final transformation (translation, rotation) to
         identity/zero and recalculates transformed_coords accordingly.
         """
+        logger.debug(f"Resetting transformation for molecule '{self.name}' (ID: {self.id})")
         self.final_translation = np.zeros(3)
         self.final_rotation_matrix = np.identity(3)
         # Recalculate transformed_coords based on reset state
         self.apply_final_transformation()
+        logger.info(f"Transformation reset for molecule '{self.name}'")
 
     @property
     def centroid(self) -> np.ndarray:
@@ -97,8 +125,14 @@ class Molecule:
         to the original coordinates to update self.transformed_coords.
         Rotation occurs around the original centroid.
         """
+        logger.debug(
+            f"Applying transformation to molecule '{self.name}' "
+            f"(translation: {self.final_translation})"
+        )
+
         if self.coords.size == 0:
             self.transformed_coords = np.array([])  # Ensure it's empty if no coords
+            logger.warning(f"Molecule '{self.name}' has no coordinates to transform")
             return
 
         original_centroid = self.centroid  # Use property which uses helper
@@ -111,6 +145,8 @@ class Molecule:
         coords_recentered = coords_rotated + original_centroid
         # Apply stored translation
         self.transformed_coords = coords_recentered + self.final_translation
+
+        logger.debug(f"Transformation applied to {self.num_atoms} atoms in molecule '{self.name}'")
 
     def get_atom_coord(self, index: int) -> Optional[np.ndarray]:
         """Safely retrieves the *original* coordinates of an atom by index."""

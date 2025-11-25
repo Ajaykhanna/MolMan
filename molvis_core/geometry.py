@@ -8,6 +8,17 @@ to molecular visualization.
 import numpy as np
 from typing import Optional
 
+from .logging_config import get_logger
+from .exceptions import (
+    InvalidCoordinatesError,
+    InvalidRotationError,
+    InvalidTransformationError,
+    DimensionMismatchError,
+)
+
+# Initialize logger for this module
+logger = get_logger(__name__)
+
 
 def calculate_centroid(coords: np.ndarray) -> np.ndarray:
     """
@@ -19,12 +30,25 @@ def calculate_centroid(coords: np.ndarray) -> np.ndarray:
     Returns:
         A NumPy array (3,) representing the (x, y, z) centroid,
         or [0, 0, 0] if the input array is empty or invalid.
+
+    Raises:
+        InvalidCoordinatesError: If coordinates have invalid shape
     """
+    logger.debug(f"Calculating centroid for {coords.shape if coords is not None else 'None'}")
+
     if coords is None or coords.size == 0:
+        logger.warning("Empty or None coordinates provided, returning zero centroid")
         return np.zeros(3)
+
     if coords.ndim != 2 or coords.shape[1] != 3:
-        raise ValueError("Input coords must be a NumPy array of shape (N, 3)")
-    return np.mean(coords, axis=0)
+        logger.error(f"Invalid coordinate shape: {coords.shape}, expected (N, 3)")
+        raise InvalidCoordinatesError(
+            f"Input coords must be a NumPy array of shape (N, 3), got {coords.shape}"
+        )
+
+    centroid = np.mean(coords, axis=0)
+    logger.debug(f"Calculated centroid: {centroid}")
+    return centroid
 
 
 def build_rotation_matrix(
@@ -42,7 +66,19 @@ def build_rotation_matrix(
 
     Returns:
         A 3x3 NumPy rotation matrix (R = Rz * Ry * Rx).
+
+    Raises:
+        InvalidRotationError: If angles are invalid (NaN or infinite)
     """
+    logger.debug(
+        f"Building rotation matrix: X={angle_x_deg}°, Y={angle_y_deg}°, Z={angle_z_deg}°"
+    )
+
+    # Validate angles
+    if not all(np.isfinite([angle_x_deg, angle_y_deg, angle_z_deg])):
+        logger.error("Invalid rotation angles: values must be finite")
+        raise InvalidRotationError("Rotation angles must be finite values")
+
     theta_x, theta_y, theta_z = (
         np.radians(angle_x_deg),
         np.radians(angle_y_deg),
@@ -62,7 +98,9 @@ def build_rotation_matrix(
     # Combined rotation: Apply R_x, then R_y, then R_z
     # Matrix multiplication order is R_z @ R_y @ R_x
     # To apply to row vectors (N x 3 array): result = vectors @ R.T
-    return R_z @ R_y @ R_x
+    rotation_matrix = R_z @ R_y @ R_x
+    logger.debug("Successfully built rotation matrix")
+    return rotation_matrix
 
 
 def apply_transform(
@@ -88,24 +126,42 @@ def apply_transform(
         A new NumPy array (N, 3) containing the transformed coordinates.
 
     Raises:
-        ValueError: If input shapes are incorrect.
+        InvalidCoordinatesError: If coordinates have invalid shape
+        InvalidTransformationError: If transformation parameters are invalid
+        DimensionMismatchError: If array dimensions don't match
     """
+    logger.debug(
+        f"Applying transform to {coords.shape[0] if coords.size > 0 else 0} atoms"
+    )
+
     if coords.size == 0:
+        logger.warning("Empty coordinates provided, returning empty array")
         return np.array([])  # Return empty if input is empty
+
     if coords.ndim != 2 or coords.shape[1] != 3:
-        raise ValueError("Input coords must be a NumPy array of shape (N, 3)")
+        logger.error(f"Invalid coordinate shape: {coords.shape}")
+        raise InvalidCoordinatesError(
+            f"Input coords must be a NumPy array of shape (N, 3), got {coords.shape}"
+        )
+
     if rotation_matrix.shape != (3, 3):
-        raise ValueError("rotation_matrix must be a 3x3 NumPy array")
+        logger.error(f"Invalid rotation matrix shape: {rotation_matrix.shape}")
+        raise DimensionMismatchError("(3, 3)", str(rotation_matrix.shape))
+
     if translation_vector.shape != (3,):
-        raise ValueError("translation_vector must be a NumPy array of shape (3,)")
+        logger.error(f"Invalid translation vector shape: {translation_vector.shape}")
+        raise DimensionMismatchError("(3,)", str(translation_vector.shape))
 
     # Determine the center of rotation
     if center_of_rotation is None:
         center = calculate_centroid(coords)
+        logger.debug(f"Using calculated centroid as rotation center: {center}")
     else:
         if center_of_rotation.shape != (3,):
-            raise ValueError("center_of_rotation must be a NumPy array of shape (3,)")
+            logger.error(f"Invalid center_of_rotation shape: {center_of_rotation.shape}")
+            raise DimensionMismatchError("(3,)", str(center_of_rotation.shape))
         center = center_of_rotation
+        logger.debug(f"Using provided rotation center: {center}")
 
     # Translate coordinates so the center of rotation is at the origin
     coords_centered = coords - center
@@ -116,4 +172,5 @@ def apply_transform(
     # Apply final translation
     transformed_coords = coords_recentered + translation_vector
 
+    logger.debug(f"Successfully transformed {coords.shape[0]} atoms")
     return transformed_coords

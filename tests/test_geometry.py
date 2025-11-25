@@ -8,6 +8,11 @@ and coordinate transformations.
 import pytest
 import numpy as np
 from molvis_core import geometry
+from molvis_core.exceptions import (
+    InvalidCoordinatesError,
+    InvalidRotationError,
+    DimensionMismatchError,
+)
 
 
 class TestCalculateCentroid:
@@ -71,7 +76,7 @@ class TestCalculateCentroid:
         """Test that invalid shape raises error."""
         coords = np.array([1.0, 2.0, 3.0])  # 1D array
 
-        with pytest.raises(ValueError, match="shape \\(N, 3\\)"):
+        with pytest.raises(InvalidCoordinatesError, match="shape \\(N, 3\\)"):
             geometry.calculate_centroid(coords)
 
     @pytest.mark.unit
@@ -314,7 +319,7 @@ class TestApplyTransform:
         coords = np.array([[1.0, 2.0, 3.0]])
 
         # Invalid rotation matrix shape
-        with pytest.raises(ValueError, match="3x3"):
+        with pytest.raises(DimensionMismatchError):
             geometry.apply_transform(
                 coords,
                 rotation_matrix=np.identity(2),
@@ -322,7 +327,7 @@ class TestApplyTransform:
             )
 
         # Invalid translation vector shape
-        with pytest.raises(ValueError, match="shape \\(3,\\)"):
+        with pytest.raises(DimensionMismatchError):
             geometry.apply_transform(
                 coords,
                 rotation_matrix=np.identity(3),
@@ -330,7 +335,7 @@ class TestApplyTransform:
             )
 
         # Invalid coords shape
-        with pytest.raises(ValueError, match="shape \\(N, 3\\)"):
+        with pytest.raises(InvalidCoordinatesError):
             geometry.apply_transform(
                 np.array([1.0, 2.0, 3.0]),
                 rotation_matrix=np.identity(3),

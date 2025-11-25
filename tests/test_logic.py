@@ -7,6 +7,7 @@ Tests bond determination algorithms and related chemical logic.
 import pytest
 import numpy as np
 from molvis_core import logic
+from molvis_core.exceptions import AtomCountMismatchError
 
 
 class TestGetBondDistanceRange:
@@ -194,7 +195,7 @@ class TestDetermineBonds:
         symbols = ['C', 'H']
         coords = np.array([[0.0, 0.0, 0.0]])  # Only 1 coord for 2 symbols
 
-        with pytest.raises(ValueError, match="Shape mismatch"):
+        with pytest.raises(AtomCountMismatchError):
             logic.determine_bonds(symbols, coords)
 
     @pytest.mark.unit
