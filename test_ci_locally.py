@@ -8,7 +8,6 @@ locally before pushing to GitHub.
 
 import subprocess
 import sys
-from pathlib import Path
 
 
 def run_command(cmd, description, continue_on_error=False):
