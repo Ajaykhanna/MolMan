@@ -5,13 +5,14 @@ Tests the Molecule class including initialization, transformations,
 centroid calculations, and state management.
 """
 
-import pytest
 import numpy as np
-from molvis_core.molecule import Molecule
+import pytest
+
 from molvis_core.exceptions import (
-    InvalidCoordinatesError,
     AtomCountMismatchError,
+    InvalidCoordinatesError,
 )
+from molvis_core.molecule import Molecule
 
 
 class TestMoleculeInitialization:
@@ -311,7 +312,6 @@ class TestMoleculeEdgeCases:
     def test_multiple_transformations(self, water_molecule):
         """Test applying transformations sequentially."""
         mol = water_molecule
-        original_coords = mol.coords.copy()
 
         # First transformation
         mol.final_translation = np.array([1.0, 0.0, 0.0])
