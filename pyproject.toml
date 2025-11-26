@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "molman"
-version = "0.3.0"
+version = "1.0.0"
 description = "Molecular Visualization and Manipulation Tool"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["chemistry", "molecular", "visualization", "xyz", "computational-chemistry"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Chemistry",
     "Programming Language :: Python :: 3",
