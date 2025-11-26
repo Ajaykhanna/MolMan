@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "Molecular Visualization and Manipulation Tool"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "MolMan Contributors"}
 ]
@@ -17,7 +17,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Chemistry",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -50,6 +49,13 @@ dev = [
 Homepage = "https://github.com/Ajaykhanna/MolMan"
 Repository = "https://github.com/Ajaykhanna/MolMan"
 Issues = "https://github.com/Ajaykhanna/MolMan/issues"
+
+# Setuptools configuration
+[tool.setuptools]
+packages = ["molvis_core", "molvis_plotting", "molvis_streamlit", "molvis_tkinter"]
+
+[tool.setuptools.package-data]
+molvis_core = ["py.typed"]
 
 # Black configuration
 [tool.black]
