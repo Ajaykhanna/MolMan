@@ -227,3 +227,53 @@ class ValueOutOfRangeError(ValidationError):
         super().__init__(
             f"Value {value} for '{param_name}' is out of range [{min_val}, {max_val}]"
         )
+
+
+# === File Format Exceptions (Phase 4) ===
+
+
+class UnsupportedFormatError(FileFormatError):
+    """Raised when a file format is not supported."""
+
+    def __init__(self, filepath: str, format_hint: str = ""):
+        self.filepath = filepath
+        self.format_hint = format_hint
+        msg = f"Unsupported file format: {filepath}"
+        if format_hint:
+            msg += f" (detected as: {format_hint})"
+        super(FileIOError, self).__init__(msg)
+
+
+class FormatValidationError(FileFormatError):
+    """Raised when file format validation fails."""
+
+    def __init__(self, filepath: str, format_type: str, reason: str):
+        self.filepath = filepath
+        self.format_type = format_type
+        self.reason = reason
+        super(FileIOError, self).__init__(
+            f"{format_type} validation failed for '{filepath}': {reason}"
+        )
+
+
+class FormatConversionError(MolManError):
+    """Raised when format conversion fails."""
+
+    def __init__(self, from_format: str, to_format: str, reason: str):
+        self.from_format = from_format
+        self.to_format = to_format
+        self.reason = reason
+        super().__init__(
+            f"Failed to convert from {from_format} to {to_format}: {reason}"
+        )
+
+
+class MissingMetadataError(MolManError):
+    """Raised when required metadata is missing from a file."""
+
+    def __init__(self, filepath: str, metadata_key: str):
+        self.filepath = filepath
+        self.metadata_key = metadata_key
+        super().__init__(
+            f"Missing required metadata '{metadata_key}' in file: {filepath}"
+        )
