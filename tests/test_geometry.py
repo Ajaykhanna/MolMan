@@ -5,13 +5,14 @@ Tests geometric calculations including centroid, rotation matrices,
 and coordinate transformations.
 """
 
-import pytest
 import numpy as np
+import pytest
+
 from molvis_core import geometry
 from molvis_core.exceptions import (
+    DimensionMismatchError,
     InvalidCoordinatesError,
     InvalidRotationError,
-    DimensionMismatchError,
 )
 
 

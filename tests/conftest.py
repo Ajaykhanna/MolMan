@@ -2,18 +2,17 @@
 Pytest configuration and shared fixtures for MolMan tests.
 """
 
-import pytest
-import numpy as np
-from pathlib import Path
-from typing import List, Tuple
-
 # Add project root to path for imports
 import sys
+from pathlib import Path
+
+import numpy as np
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from molvis_core.molecule import Molecule
 from molvis_core import io as core_io
-
+from molvis_core.molecule import Molecule
 
 # === Path Fixtures ===
 
@@ -62,7 +61,7 @@ def multiblock_xyz_path(fixtures_dir) -> Path:
 # === Data Fixtures ===
 
 @pytest.fixture
-def water_data() -> Tuple[List[str], np.ndarray]:
+def water_data() -> tuple[list[str], np.ndarray]:
     """Return water molecule symbols and coordinates."""
     symbols = ['O', 'H', 'H']
     coords = np.array([
@@ -74,7 +73,7 @@ def water_data() -> Tuple[List[str], np.ndarray]:
 
 
 @pytest.fixture
-def benzene_data() -> Tuple[List[str], np.ndarray]:
+def benzene_data() -> tuple[list[str], np.ndarray]:
     """Return benzene molecule symbols and coordinates."""
     symbols = ['C', 'C', 'C', 'C', 'C', 'C', 'H', 'H', 'H', 'H', 'H', 'H']
     coords = np.array([
@@ -95,7 +94,7 @@ def benzene_data() -> Tuple[List[str], np.ndarray]:
 
 
 @pytest.fixture
-def methane_data() -> Tuple[List[str], np.ndarray]:
+def methane_data() -> tuple[list[str], np.ndarray]:
     """Return methane molecule symbols and coordinates."""
     symbols = ['C', 'H', 'H', 'H', 'H']
     coords = np.array([

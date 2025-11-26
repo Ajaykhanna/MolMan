@@ -4,14 +4,15 @@ Unit tests for molvis_core.project module.
 Tests project serialization, saving, loading, and management.
 """
 
-import pytest
 import json
-import numpy as np
 from pathlib import Path
 
-from molvis_core.project import Project, create_backup, get_auto_save_path
-from molvis_core.molecule import Molecule
+import numpy as np
+import pytest
+
 from molvis_core.exceptions import FileFormatError, FileParseError
+from molvis_core.molecule import Molecule
+from molvis_core.project import Project, create_backup, get_auto_save_path
 
 
 @pytest.fixture
@@ -102,7 +103,7 @@ class TestProject:
         # Remove water
         removed = project.remove_molecule(1)
 
-        assert removed == True
+        assert removed is True
         assert len(project.molecules) == 1
         assert project.molecules[0].name == "Benzene"
 
@@ -113,7 +114,7 @@ class TestProject:
 
         removed = project.remove_molecule(999)
 
-        assert removed == False
+        assert removed is False
         assert len(project.molecules) == 1
 
     @pytest.mark.unit

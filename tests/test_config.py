@@ -4,14 +4,15 @@ Unit tests for molvis_core.config module.
 Tests configuration management, user preferences, and recent files tracking.
 """
 
-import pytest
 import json
-from pathlib import Path
-import tempfile
 import shutil
+import tempfile
+from pathlib import Path
 
-from molvis_core.config import ConfigManager, DEFAULT_CONFIG, get_config_manager
-from molvis_core.exceptions import InvalidConfigError, ConfigurationError
+import pytest
+
+from molvis_core.config import DEFAULT_CONFIG, ConfigManager, get_config_manager
+from molvis_core.exceptions import ConfigurationError, InvalidConfigError
 
 
 @pytest.fixture
@@ -62,7 +63,7 @@ class TestConfigManager:
         # Load it
         config_manager.load()
 
-        assert config_manager.get("preferences.auto_save.enabled") == False
+        assert not config_manager.get("preferences.auto_save.enabled")
         assert config_manager.get("preferences.auto_save.interval_minutes") == 10
 
     @pytest.mark.unit
@@ -76,7 +77,7 @@ class TestConfigManager:
         new_manager = ConfigManager(config_manager.config_file)
         new_manager.load()
 
-        assert new_manager.get("preferences.auto_save.enabled") == False
+        assert not new_manager.get("preferences.auto_save.enabled")
 
     @pytest.mark.unit
     def test_get_nested_value(self, config_manager):
@@ -100,7 +101,7 @@ class TestConfigManager:
         config_manager.load()
         config_manager.set("preferences.auto_save.enabled", False)
 
-        assert config_manager.get("preferences.auto_save.enabled") == False
+        assert not config_manager.get("preferences.auto_save.enabled")
 
     @pytest.mark.unit
     def test_set_new_path(self, config_manager):
@@ -207,13 +208,13 @@ class TestConfigManager:
         config_manager.save()
 
         # Verify modifications were saved
-        assert config_manager.get("preferences.auto_save.enabled") == False
+        assert not config_manager.get("preferences.auto_save.enabled")
 
         # Reset
         config_manager.reset_to_defaults()
 
         # Should be back to defaults
-        assert config_manager.get("preferences.auto_save.enabled") == True
+        assert config_manager.get("preferences.auto_save.enabled")
         assert config_manager.get("preferences.auto_save.interval_minutes") == 5
 
     @pytest.mark.unit
@@ -231,7 +232,7 @@ class TestConfigManager:
         with export_path.open("r") as f:
             exported = json.load(f)
 
-        assert exported["preferences"]["auto_save"]["enabled"] == False
+        assert not exported["preferences"]["auto_save"]["enabled"]
 
     @pytest.mark.unit
     def test_import_config(self, config_manager, tmp_path):
@@ -255,7 +256,7 @@ class TestConfigManager:
         config_manager.load()
         config_manager.import_config(import_path)
 
-        assert config_manager.get("preferences.auto_save.enabled") == False
+        assert not config_manager.get("preferences.auto_save.enabled")
         assert config_manager.get("preferences.auto_save.interval_minutes") == 99
 
     @pytest.mark.unit
@@ -306,4 +307,4 @@ class TestConfigManager:
         # Should have default interval_minutes even though not in file
         assert test_config_manager.get("preferences.auto_save.interval_minutes") == 5
         # But custom enabled value
-        assert test_config_manager.get("preferences.auto_save.enabled") == False
+        assert test_config_manager.get("preferences.auto_save.enabled") is False

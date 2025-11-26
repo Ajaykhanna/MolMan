@@ -4,8 +4,9 @@ Unit tests for molvis_core.logic module.
 Tests bond determination algorithms and related chemical logic.
 """
 
-import pytest
 import numpy as np
+import pytest
+
 from molvis_core import logic
 from molvis_core.exceptions import AtomCountMismatchError
 
