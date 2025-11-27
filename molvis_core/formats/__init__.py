@@ -25,10 +25,12 @@ from molvis_core.formats.base import (
     load_structure,
     write_structure,
 )
+from molvis_core.formats.pdb import PDBParser
 from molvis_core.formats.xyz import XYZParser
 
-# Register the XYZ parser
+# Register parsers
 FormatRegistry.register('xyz', XYZParser)
+FormatRegistry.register('pdb', PDBParser)
 
 __all__ = [
     'FileFormatBase',
@@ -36,6 +38,7 @@ __all__ = [
     'FormatRegistry',
     'load_structure',
     'write_structure',
+    'PDBParser',
     'XYZParser',
 ]
 
