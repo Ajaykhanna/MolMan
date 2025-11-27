@@ -6,7 +6,8 @@ Includes methods for managing transformation state relative to original coordina
 """
 
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 
 from .logging_config import get_logger
@@ -40,6 +41,7 @@ class Molecule:
         bonds: List of tuples representing bonds (indices relative to this molecule).
         source_file_index: Optional index of the source file.
         source_file_name: Optional original filename.
+        metadata: Dictionary for storing format-specific metadata.
         transformed_coords: NumPy array (N x 3) holding the current coordinates
                             after applying final_translation and final_rotation_matrix.
         final_translation: NumPy array (3,) storing the total translation applied
@@ -54,6 +56,7 @@ class Molecule:
     bonds: List[Tuple[int, int]]
     source_file_index: Optional[int] = None
     source_file_name: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     # --- State Attributes ---
     # Current coordinates after transformations applied in apply_final_transformation
